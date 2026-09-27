@@ -4,7 +4,7 @@
 
 Diagram Extractor for Visio with local and ONline capability (via draw.io)
 
-Version: 0.1.7 (see [CHANGELOG.md](CHANGELOG.md))
+Version: 0.1.8 (see [CHANGELOG.md](CHANGELOG.md))
 
 Works with Microsoft Visio stencil and drawing files two ways:
 

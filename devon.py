@@ -23,7 +23,7 @@ automatically. The local path additionally needs libvisio's vss2raw/
 vss2xhtml/vsd2raw/vsd2xhtml (and optionally emf2svg-conv, rsvg-convert) on
 PATH; see README.md.
 """
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 __description__ = "Diagram Extractor for Visio with local and ONline capability (via draw.io)"
 
 import argparse
@@ -157,6 +157,13 @@ def parse_library(content: str) -> list:
     # vss.draw.io HTML-escapes quotes inside shape titles without re-escaping
     # them for JSON, so the raw JSON is invalid until entities are decoded.
     return json.loads(html.unescape(inner))
+
+
+def no_spaces(name: str) -> str:
+    """Replace each space in name with a single underscore, so a filename
+    derived from it (e.g. from an uploaded file's own name) never carries
+    spaces through into a generated filename."""
+    return name.replace(" ", "_")
 
 
 def safe_shape_filename(title: str, index: int, seen: dict, ext: str) -> str:
@@ -888,7 +895,7 @@ def main():
     try:
         for path in upload_paths:
             vlog(f"Converting {path}")
-            base = os.path.splitext(os.path.basename(path))[0]
+            base = no_spaces(os.path.splitext(os.path.basename(path))[0])
             if multiple:
                 # --download is a directory when converting multiple stencils.
                 download_dir = os.path.abspath(args.download) if args.download else os.getcwd()
