@@ -23,7 +23,7 @@ automatically. The local path additionally needs libvisio's vss2raw/
 vss2xhtml/vsd2raw/vsd2xhtml (and optionally emf2svg-conv, rsvg-convert) on
 PATH; see README.md.
 """
-__version__ = "0.1.9"
+__version__ = "0.2.0"
 __description__ = "Diagram Extractor for Visio with local and ONline capability (via draw.io)"
 
 import argparse
@@ -225,11 +225,34 @@ def rasterize_svg_to_jpg(svg_content, output_path: str, tmp_dir: str, index: int
         im.convert("RGB").save(output_path, "JPEG", quality=90)
 
 
+def rasterize_svg_to_png(svg_content, output_path: str, tmp_dir: str, index: int, max_size: int = 2000) -> None:
+    """Rasterize SVG content (str or bytes) to a PNG, via rsvg-convert
+    (capped to max_size on the longest side, since some embedded artwork
+    has a native resolution above librsvg's internal 32767px limit).
+    Unlike --to jpg, transparency is preserved rather than flattened onto
+    a white background."""
+    if shutil.which("rsvg-convert") is None:
+        raise RuntimeError(
+            "'rsvg-convert' not found on PATH. Install librsvg "
+            "(e.g. `brew install librsvg`) to use --to png."
+        )
+    svg_path = os.path.join(tmp_dir, f"raster_{index}.svg")
+    with open(svg_path, "wb" if isinstance(svg_content, bytes) else "w") as f:
+        f.write(svg_content)
+    subprocess.run(
+        [
+            "rsvg-convert", "-w", str(max_size), "-h", str(max_size), "-a",
+            "-o", output_path, svg_path,
+        ],
+        capture_output=True, check=True,
+    )
+
+
 def split_library(content: str, out_dir: str, fmt: str = "xml") -> tuple[int, int]:
     """Split an <mxlibrary> file's shapes into individual files in out_dir,
     one per shape, named after each shape's title. fmt "xml" writes
-    single-shape library files (default); fmt "svg"/"jpg" extract each
-    shape's embedded artwork instead (rasterized to JPEG for "jpg"),
+    single-shape library files (default); fmt "svg"/"jpg"/"png" extract
+    each shape's embedded artwork instead (rasterized for "jpg"/"png"),
     skipping shapes that have none. Returns (written, skipped)."""
     shapes = parse_library(content)
     vlog(f"Parsed {len(shapes)} shape(s) from the library")
@@ -237,11 +260,11 @@ def split_library(content: str, out_dir: str, fmt: str = "xml") -> tuple[int, in
     seen = {}
     written = 0
     skipped = 0
-    tmp_dir = tempfile.mkdtemp(prefix="devon_raster_") if fmt == "jpg" else None
+    tmp_dir = tempfile.mkdtemp(prefix="devon_raster_") if fmt in ("jpg", "png") else None
     try:
         for i, shape in enumerate(shapes):
             title = shape.get("title") or f"shape_{i}"
-            if fmt in ("svg", "jpg"):
+            if fmt in ("svg", "jpg", "png"):
                 svg_bytes = extract_svg(shape["xml"])
                 if svg_bytes is None:
                     vlog(f"Skipping '{title}': no visible artwork")
@@ -252,10 +275,14 @@ def split_library(content: str, out_dir: str, fmt: str = "xml") -> tuple[int, in
                     vlog(f"Writing '{title}' to {filename}")
                     with open(os.path.join(out_dir, filename), "wb") as f:
                         f.write(svg_bytes)
-                else:
+                elif fmt == "jpg":
                     filename = safe_shape_filename(shape.get("title"), i, seen, "jpg")
                     vlog(f"Rasterizing '{title}' to {filename}")
                     rasterize_svg_to_jpg(svg_bytes, os.path.join(out_dir, filename), tmp_dir, i)
+                else:
+                    filename = safe_shape_filename(shape.get("title"), i, seen, "png")
+                    vlog(f"Rasterizing '{title}' to {filename}")
+                    rasterize_svg_to_png(svg_bytes, os.path.join(out_dir, filename), tmp_dir, i)
             else:
                 filename = safe_shape_filename(shape.get("title"), i, seen, "xml")
                 vlog(f"Writing '{title}' to {filename}")
@@ -464,7 +491,7 @@ def split_visio_document(doc_path: str, out_dir: str, fmt: str, raw_tool: str, x
     Windows EMF/WMF metafile (which libvisio can't rasterize and browsers
     can't display) are recovered with emf2svg-conv when it's installed,
     otherwise skipped. fmt "svg" (default) writes the rendered SVG
-    directly; fmt "jpg" rasterizes it to JPEG. Returns (written, skipped)."""
+    directly; fmt "jpg"/"png" rasterizes it. Returns (written, skipped)."""
     for tool in (raw_tool, xhtml_tool):
         if shutil.which(tool) is None:
             raise RuntimeError(
@@ -508,6 +535,10 @@ def split_visio_document(doc_path: str, out_dir: str, fmt: str, raw_tool: str, x
                 filename = safe_shape_filename(name, i, seen, "jpg")
                 vlog(f"Rasterizing '{name}' to {filename}")
                 rasterize_svg_to_jpg(svg_doc, os.path.join(out_dir, filename), tmp_dir, i)
+            elif fmt == "png":
+                filename = safe_shape_filename(name, i, seen, "png")
+                vlog(f"Rasterizing '{name}' to {filename}")
+                rasterize_svg_to_png(svg_doc, os.path.join(out_dir, filename), tmp_dir, i)
             else:
                 filename = safe_shape_filename(name, i, seen, "svg")
                 vlog(f"Writing '{name}' to {filename}")
@@ -670,7 +701,7 @@ def check_config(install: bool = False, quiet: bool = False) -> int:
          "install Google Chrome or Chromium, needed for the online --upload path"),
         ("Pillow", "Python package", _has_module("PIL"), False,
          "pip install Pillow>=10, needed for --to jpg"),
-        tool_check("rsvg-convert", "install librsvg (e.g. `brew install librsvg`), needed for --to jpg"),
+        tool_check("rsvg-convert", "install librsvg (e.g. `brew install librsvg`), needed for --to jpg/png"),
         tool_check("vss2raw", "install libvisio (e.g. `brew install libvisio`), needed to split raw .vss/.vssx files locally"),
         tool_check("vss2xhtml", "install libvisio, needed to split raw .vss/.vssx files locally"),
         tool_check("vsd2raw", "install libvisio, needed to split raw .vsd/.vsdx files locally"),
@@ -762,10 +793,10 @@ def main():
     )
     parser.add_argument(
         "--to",
-        choices=["xml", "svg", "jpg"],
+        choices=["xml", "svg", "jpg", "png"],
         default="xml",
         help="Output format for --split: single-shape library files (xml, default), "
-             "each shape's embedded artwork (svg), or a rasterized JPEG (jpg)",
+             "each shape's embedded artwork (svg), or a rasterized JPEG (jpg) or PNG (png)",
     )
     parser.add_argument("--headless", action="store_true", help="Run Chrome headless")
     parser.add_argument("--timeout", type=int, default=90, help="Seconds to wait for conversion (default: 90)")
@@ -852,7 +883,7 @@ def main():
                     if args.to == "xml":
                         parser.error(
                             "--to xml is not supported when --input is a .vss/.vssx/.vsd/.vsdx "
-                            "file; use --to svg or --to jpg"
+                            "file; use --to svg, --to jpg, or --to png"
                         )
                     if is_drawing_file(path):
                         vlog("Detected a raw .vsd/.vsdx drawing; splitting into per-page files")

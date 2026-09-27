@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-27
+
+### Added
+
+- `--to png`: rasterizes each shape/page's artwork to PNG via
+  `rasterize_svg_to_png` (new), using `rsvg-convert` directly with no
+  Pillow step. Unlike `--to jpg`, transparency is preserved rather than
+  flattened onto a white background. Verified against a real file
+  (`Mikrotik_CCR2004_16GS_2S+PC_v2025.vsdx`): its page rasterized to a
+  correct, transparent 2000x431 RGBA PNG.
+
 ## [0.1.9] - 2026-09-27
 
 ### Added

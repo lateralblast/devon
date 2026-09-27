@@ -4,7 +4,7 @@
 
 Diagram Extractor for Visio with local and ONline capability (via draw.io)
 
-Version: 0.1.9 (see [CHANGELOG.md](CHANGELOG.md))
+Version: 0.2.0 (see [CHANGELOG.md](CHANGELOG.md))
 
 Works with Microsoft Visio stencil and drawing files two ways:
 
@@ -39,10 +39,11 @@ individual per-shape files; see `--split` below.
   metafile when splitting a raw file: `emf2svg-conv` from
   [libemf2svg](https://github.com/kakwa/libemf2svg) on `PATH`
   (`brew install libemf2svg` on macOS)
-- Optional, for `--to jpg`: `rsvg-convert` (from
+- Optional, for `--to jpg`/`--to png`: `rsvg-convert` (from
   [librsvg](https://wiki.gnome.org/Projects/LibRsvg)) on `PATH`
-  (`brew install librsvg` on macOS); [Pillow](https://pypi.org/project/Pillow/)
-  handles the PNG -> JPEG step and is installed automatically if missing
+  (`brew install librsvg` on macOS); for `--to jpg` specifically,
+  [Pillow](https://pypi.org/project/Pillow/) handles the PNG -> JPEG step
+  and is installed automatically if missing
 
 ```
 pip install -r requirements.txt
@@ -63,7 +64,7 @@ python3 devon.py --upload Stencil.vss --download Stencil.xml
 | `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx` stencil or `.vsd`/`.vsdx` drawing file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`) |
 | `--split`    | off                                    | Split the library/stencil file into individual per-shape files (requires `--output`) |
 | `--output`   | none                                   | Directory to write per-shape files into (used with `--split`) |
-| `--to`       | `xml`                                  | Output format for `--split`: `xml` (single-shape library files), `svg` (each shape's embedded artwork), or `jpg` (rasterized JPEG) |
+| `--to`       | `xml`                                  | Output format for `--split`: `xml` (single-shape library files), `svg` (each shape's embedded artwork), `jpg` (rasterized JPEG), or `png` (rasterized PNG) |
 | `--headless` | off                                    | Run Chrome without a visible window                        |
 | `--timeout`  | `90`                                   | Seconds to wait for conversion/download                    |
 | `--checkconfig` | off                                 | Check that required and optional dependencies are installed, then exit |
@@ -245,6 +246,14 @@ Pass `--to jpg` instead to get a rasterized, white-background JPEG per shape
 python3 devon.py --input Stencil.xml --split --output shapes/ --to jpg
 ```
 
+Pass `--to png` for a rasterized PNG per shape instead (via `rsvg-convert`
+alone, no Pillow needed): transparency is preserved rather than flattened
+onto a white background, unlike `--to jpg`:
+
+```
+python3 devon.py --input Stencil.xml --split --output shapes/ --to png
+```
+
 ### Splitting a raw stencil or drawing file directly (offline, no browser)
 
 `--input` also accepts a raw `.vss`/`.vssx` stencil or `.vsd`/`.vsdx`
@@ -267,7 +276,7 @@ A `.vsd`/`.vsdx` file is a document with drawn pages, not a shape library,
 so "shapes" there means whole pages of the drawing.
 
 (`--to xml` isn't supported for any of these inputs: there's no per-shape
-library format to reuse. Use `--to svg` or `--to jpg` instead.)
+library format to reuse. Use `--to svg`, `--to jpg`, or `--to png` instead.)
 
 `.vssx`/`.vsd`/`.vsdx` are only supported by this local path, not
 `--upload`: vss.draw.io's own upload check rejects anything whose filename
