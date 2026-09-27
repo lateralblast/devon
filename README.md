@@ -4,7 +4,7 @@
 
 Diagram Extractor for Visio with local and ONline capability (via draw.io)
 
-Version: 0.1.8 (see [CHANGELOG.md](CHANGELOG.md))
+Version: 0.1.9 (see [CHANGELOG.md](CHANGELOG.md))
 
 Works with Microsoft Visio stencil and drawing files two ways:
 
@@ -14,12 +14,12 @@ Works with Microsoft Visio stencil and drawing files two ways:
   steps you'd do yourself: open the site, upload the `.vss` file, check
   "I confirm this file contains no sensitive or personal information,"
   click **Convert**, and save the resulting library file locally. (The
-  site itself only accepts `.vss`, not `.vssx` or `.vsd`, so this path
-  is `.vss`-only.)
-- **Locally**, entirely offline: parses a **classic `.vss` stencil, modern
-  `.vssx` stencil, or classic `.vsd` drawing** file directly with
-  `libvisio` and extracts each individual shape or page as its own file
-  (SVG or JPEG), with no browser or upload involved. See
+  site itself only accepts `.vss`, not `.vssx`, `.vsd`, or `.vsdx`, so this
+  path is `.vss`-only.)
+- **Locally**, entirely offline: parses a **classic `.vss` or modern
+  `.vssx` stencil, or a classic `.vsd` or modern `.vsdx` drawing** file
+  directly with `libvisio` and extracts each individual shape or page as
+  its own file (SVG or JPEG), with no browser or upload involved. See
   [Splitting a raw stencil or drawing file directly](#splitting-a-raw-stencil-or-drawing-file-directly-offline-no-browser)
   below.
 
@@ -31,12 +31,12 @@ individual per-shape files; see `--split` below.
 - Python 3
 - [Selenium](https://pypi.org/project/selenium/) 4.6+ (auto-downloads a matching chromedriver)
 - Google Chrome or Chromium installed
-- Optional, for splitting a raw `.vss` file directly (see below):
-  [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)'s
-  `vss2raw` and `vss2xhtml` command-line tools on `PATH`
-  (`brew install libvisio` on macOS)
+- Optional, for splitting a raw `.vss`/`.vssx`/`.vsd`/`.vsdx` file directly
+  (see below): [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)'s
+  `vss2raw`/`vss2xhtml` and `vsd2raw`/`vsd2xhtml` command-line tools on
+  `PATH` (`brew install libvisio` on macOS)
 - Optional, to recover shapes whose artwork is an embedded Windows EMF/WMF
-  metafile when splitting a `.vss` file: `emf2svg-conv` from
+  metafile when splitting a raw file: `emf2svg-conv` from
   [libemf2svg](https://github.com/kakwa/libemf2svg) on `PATH`
   (`brew install libemf2svg` on macOS)
 - Optional, for `--to jpg`: `rsvg-convert` (from
@@ -60,7 +60,7 @@ python3 devon.py --upload Stencil.vss --download Stencil.xml
 |--------------|---------------------------------------|------------------------------------------------------------|
 | `--upload`   | *(required unless `--input` is used)* | Path to the `.vss` file to upload, or a `.zip` containing one or more |
 | `--download` | `<upload basename>.xml` in the cwd    | Where to save the converted library file (a directory instead, if `--upload` is a `.zip` with multiple `.vss` files) |
-| `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx` stencil or `.vsd` drawing file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`) |
+| `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx` stencil or `.vsd`/`.vsdx` drawing file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`) |
 | `--split`    | off                                    | Split the library/stencil file into individual per-shape files (requires `--output`) |
 | `--output`   | none                                   | Directory to write per-shape files into (used with `--split`) |
 | `--to`       | `xml`                                  | Output format for `--split`: `xml` (single-shape library files), `svg` (each shape's embedded artwork), or `jpg` (rasterized JPEG) |
@@ -89,7 +89,7 @@ python3 devon.py --checkconfig
 
 It exits non-zero only if `selenium` or a Chrome/Chromium install is
 missing (both unconditionally required); the rest are only needed for
-specific flags (`--to jpg`, or `--input` on a raw `.vss`/`.vssx`/`.vsd`
+specific flags (`--to jpg`, or `--input` on a raw `.vss`/`.vssx`/`.vsd`/`.vsdx`
 file) and are reported without affecting the exit code.
 
 This same check also runs automatically, silently, before any other flag
@@ -120,7 +120,7 @@ reported so you can install it manually (see Requirements above).
 
 Add `--verbose` to any run to get a running commentary on stderr of what's
 happening at each stage: which file is being read, whether it's a zip or a
-raw `.vss`/`.vssx`/`.vsd`/`<mxlibrary>` file, each shape or page as it's
+raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`<mxlibrary>` file, each shape or page as it's
 written, skipped, or rasterized, and, for the online path, each step of
 driving vss.draw.io (loading the page, uploading, confirming the
 checkbox, clicking Convert, waiting for the download). Normal stdout
@@ -189,10 +189,11 @@ Or split an already-downloaded library file, with no browser/upload involved:
 python3 devon.py --input Stencil.xml --split --output shapes/
 ```
 
-`--input` also accepts a `.zip` archive: every `.vss`/`.vssx`/`.vsd` file
-found inside is extracted and split (or, if it has none, every `.xml` file
-instead). A `.vssx` file is itself a zip package, but is detected and
-treated as a single stencil rather than being opened as a bundle.
+`--input` also accepts a `.zip` archive: every `.vss`/`.vssx`/`.vsd`/`.vsdx`
+file found inside is extracted and split (or, if it has none, every `.xml`
+file instead). A `.vssx`/`.vsdx` file is itself a zip package, but is
+detected and treated as a single stencil or drawing rather than being
+opened as a bundle.
 
 A zip with a single stencil behaves just like passing that file directly:
 
@@ -246,8 +247,8 @@ python3 devon.py --input Stencil.xml --split --output shapes/ --to jpg
 
 ### Splitting a raw stencil or drawing file directly (offline, no browser)
 
-`--input` also accepts a raw `.vss`/`.vssx` stencil or `.vsd` drawing file.
-This uses [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)
+`--input` also accepts a raw `.vss`/`.vssx` stencil or `.vsd`/`.vsdx`
+drawing file. This uses [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)
 to parse the file natively and render each item's real artwork, entirely
 offline: no browser, no vss.draw.io upload:
 
@@ -255,20 +256,22 @@ offline: no browser, no vss.draw.io upload:
 python3 devon.py --input Stencil.vss --split --output shapes/ --to svg
 python3 devon.py --input Stencil.vssx --split --output shapes/ --to svg
 python3 devon.py --input Drawing.vsd --split --output pages/ --to svg
+python3 devon.py --input Drawing.vsdx --split --output pages/ --to svg
 ```
 
 A `.vss`/`.vssx` stencil splits into one file per **master shape** (via
-`vss2raw`/`vss2xhtml`, which handle both formats transparently); a `.vsd`
-drawing splits into one file per **page** instead (via `vsd2raw`/`vsd2xhtml`).
-A `.vsd` is a document with drawn pages, not a shape library, so "shapes"
-there means whole pages of the drawing.
+`vss2raw`/`vss2xhtml`, which handle both formats transparently); a
+`.vsd`/`.vsdx` drawing splits into one file per **page** instead (via
+`vsd2raw`/`vsd2xhtml`, which likewise handle both formats transparently).
+A `.vsd`/`.vsdx` file is a document with drawn pages, not a shape library,
+so "shapes" there means whole pages of the drawing.
 
 (`--to xml` isn't supported for any of these inputs: there's no per-shape
 library format to reuse. Use `--to svg` or `--to jpg` instead.)
 
-`.vssx`/`.vsd` are only supported by this local path, not `--upload`:
-vss.draw.io's own upload check rejects anything whose filename doesn't end
-in `.vss`.
+`.vssx`/`.vsd`/`.vsdx` are only supported by this local path, not
+`--upload`: vss.draw.io's own upload check rejects anything whose filename
+doesn't end in `.vss`.
 
 Some masters/pages store their artwork as a Windows EMF/WMF metafile, which
 libvisio can't rasterize and browsers can't display. If `emf2svg-conv` (from

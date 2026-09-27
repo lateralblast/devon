@@ -5,10 +5,10 @@ Works with Microsoft Visio stencil and drawing files two ways:
 - Online, via https://vss.draw.io: automates the browser to upload a
   classic Visio stencil (.vss) file, confirm the "no sensitive information"
   checkbox, click Convert, and save the converted draw.io library file.
-  The site itself only accepts .vss, not .vssx or .vsd.
-- Locally, entirely offline: parses a .vss/.vssx stencil or .vsd drawing
-  file directly with libvisio and extracts each shape/page as its own
-  file (SVG or JPEG), with no browser or upload involved.
+  The site itself only accepts .vss, not .vssx, .vsd, or .vsdx.
+- Locally, entirely offline: parses a .vss/.vssx stencil or .vsd/.vsdx
+  drawing file directly with libvisio and extracts each shape/page as its
+  own file (SVG or JPEG), with no browser or upload involved.
 
 Either path can also split a converted or extracted library into
 individual per-shape/page files.
@@ -23,7 +23,7 @@ automatically. The local path additionally needs libvisio's vss2raw/
 vss2xhtml/vsd2raw/vsd2xhtml (and optionally emf2svg-conv, rsvg-convert) on
 PATH; see README.md.
 """
-__version__ = "0.1.8"
+__version__ = "0.1.9"
 __description__ = "Diagram Extractor for Visio with local and ONline capability (via draw.io)"
 
 import argparse
@@ -297,22 +297,52 @@ def is_vsd_file(path: str) -> bool:
     return is_vss_file(path) and path.lower().endswith((".vsd", ".vsdm"))
 
 
-def is_vssx_file(path: str) -> bool:
-    """True if path looks like a modern (OOXML/zip package) Visio stencil
-    (.vssx/.vssm), as opposed to a plain zip bundling loose files. Both are
-    zip archives, so this is checked ahead of generic zip handling."""
+def is_visio_ooxml_package(path: str) -> bool:
+    """True if path looks like a modern (OOXML/zip package) Visio file,
+    stencil or drawing (.vssx/.vssm/.vsdx/.vsdm), as opposed to a plain zip
+    bundling loose files. Both share a "visio/document.xml" part, so this
+    is checked ahead of generic zip handling."""
     if not zipfile.is_zipfile(path):
         return False
     with zipfile.ZipFile(path) as zf:
         return "visio/document.xml" in zf.namelist()
 
 
+def is_vssx_file(path: str) -> bool:
+    """True if path is a modern Visio STENCIL (.vssx/.vssm), as opposed to
+    a drawing (.vsdx/.vsdm): both are OOXML packages with a
+    "visio/document.xml" part, but only a stencil also has a
+    "visio/masters/masters.xml" part."""
+    if not is_visio_ooxml_package(path):
+        return False
+    with zipfile.ZipFile(path) as zf:
+        return "visio/masters/masters.xml" in zf.namelist()
+
+
+def is_vsdx_file(path: str) -> bool:
+    """True if path is a modern Visio DRAWING (.vsdx/.vsdm), as opposed to
+    a stencil (.vssx/.vssm): both are OOXML packages with a
+    "visio/document.xml" part, but only a drawing also has a
+    "visio/pages/pages.xml" part."""
+    if not is_visio_ooxml_package(path):
+        return False
+    with zipfile.ZipFile(path) as zf:
+        return "visio/pages/pages.xml" in zf.namelist()
+
+
+def is_drawing_file(path: str) -> bool:
+    """True if path is a Visio DRAWING (legacy .vsd/.vsdm, or modern
+    .vsdx/.vsdm), which splits into one file per page, as opposed to a
+    STENCIL, which splits into one file per master shape."""
+    return is_vsd_file(path) or is_vsdx_file(path)
+
+
 def is_visio_document_file(path: str) -> bool:
     """True if path is a Visio file libvisio/vss.draw.io can work with
-    directly (legacy .vss stencil or .vsd drawing, or modern .vssx), as
-    opposed to a <mxlibrary> XML file or a zip bundling one or more of
+    directly (legacy .vss stencil or .vsd drawing, or modern .vssx/.vsdx),
+    as opposed to a <mxlibrary> XML file or a zip bundling one or more of
     either."""
-    return is_vss_file(path) or is_vssx_file(path)
+    return is_vss_file(path) or is_vssx_file(path) or is_vsdx_file(path)
 
 
 def extract_files_from_zip(zip_path: str, tmp_dir: str, ext_groups) -> list:
@@ -336,10 +366,10 @@ def extract_files_from_zip(zip_path: str, tmp_dir: str, ext_groups) -> list:
 
 
 def extract_inputs_from_zip(zip_path: str, tmp_dir: str) -> list:
-    """Extract every .vss/.vssx/.vsd file found in a zip archive into
+    """Extract every .vss/.vssx/.vsd/.vsdx file found in a zip archive into
     tmp_dir (or, failing that, every .xml file), and return their paths.
     Raises ValueError if neither is found."""
-    return extract_files_from_zip(zip_path, tmp_dir, [(".vss", ".vssx", ".vsd"), (".xml",)])
+    return extract_files_from_zip(zip_path, tmp_dir, [(".vss", ".vssx", ".vsd", ".vsdx"), (".xml",)])
 
 
 DRAWING_TAGS = ("path", "text", "rect", "circle", "ellipse", "polygon", "polyline", "line", "image")
@@ -425,9 +455,9 @@ def recover_unrenderable_images(block: str, tmp_dir: str) -> str:
 
 
 def split_visio_document(doc_path: str, out_dir: str, fmt: str, raw_tool: str, xhtml_tool: str) -> tuple[int, int]:
-    """Split a legacy Visio document (a .vss stencil's masters, or a .vsd
-    drawing's pages) into individual files, entirely offline, using
-    libvisio: raw_tool supplies each item's real name (via its "draw:name"
+    """Split a Visio document (a .vss/.vssx stencil's masters, or a
+    .vsd/.vsdx drawing's pages) into individual files, entirely offline,
+    using libvisio: raw_tool supplies each item's real name (via its "draw:name"
     property) and xhtml_tool supplies the rendered artwork. Both walk the
     file's items in the same order, which this pairs up positionally
     (validated by matching dimensions). Items whose artwork is an embedded
@@ -490,14 +520,14 @@ def split_visio_document(doc_path: str, out_dir: str, fmt: str, raw_tool: str, x
 
 
 def split_vss(vss_path: str, out_dir: str, fmt: str = "svg") -> tuple[int, int]:
-    """Split a legacy Visio stencil (.vss/.vssx) file's masters into
-    individual per-shape files. See split_visio_document."""
+    """Split a Visio stencil (legacy .vss or modern .vssx) file's masters
+    into individual per-shape files. See split_visio_document."""
     return split_visio_document(vss_path, out_dir, fmt, "vss2raw", "vss2xhtml")
 
 
 def split_vsd(vsd_path: str, out_dir: str, fmt: str = "svg") -> tuple[int, int]:
-    """Split a legacy Visio drawing (.vsd) file's pages into individual
-    per-page files. See split_visio_document."""
+    """Split a Visio drawing (legacy .vsd or modern .vsdx) file's pages
+    into individual per-page files. See split_visio_document."""
     return split_visio_document(vsd_path, out_dir, fmt, "vsd2raw", "vsd2xhtml")
 
 
@@ -643,8 +673,8 @@ def check_config(install: bool = False, quiet: bool = False) -> int:
         tool_check("rsvg-convert", "install librsvg (e.g. `brew install librsvg`), needed for --to jpg"),
         tool_check("vss2raw", "install libvisio (e.g. `brew install libvisio`), needed to split raw .vss/.vssx files locally"),
         tool_check("vss2xhtml", "install libvisio, needed to split raw .vss/.vssx files locally"),
-        tool_check("vsd2raw", "install libvisio, needed to split raw .vsd files locally"),
-        tool_check("vsd2xhtml", "install libvisio, needed to split raw .vsd files locally"),
+        tool_check("vsd2raw", "install libvisio, needed to split raw .vsd/.vsdx files locally"),
+        tool_check("vsd2xhtml", "install libvisio, needed to split raw .vsd/.vsdx files locally"),
         tool_check("emf2svg-conv", "install libemf2svg (e.g. `brew install libemf2svg`), optional, recovers EMF/WMF artwork"),
     ]
 
@@ -697,7 +727,7 @@ def check_config(install: bool = False, quiet: bool = False) -> int:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert a Visio .vss stencil via vss.draw.io, or split a .vss/.vssx/.vsd file locally"
+        description="Convert a Visio .vss stencil via vss.draw.io, or split a .vss/.vssx/.vsd/.vsdx file locally"
     )
     parser.add_argument(
         "--version", action="version",
@@ -716,9 +746,9 @@ def main():
     )
     parser.add_argument(
         "--input",
-        help="Path to an existing <mxlibrary> file, a raw .vss/.vssx stencil or .vsd "
-             "drawing file, or a .zip containing one or more, to split instead of "
-             "converting one (use with --split)",
+        help="Path to an existing <mxlibrary> file, a raw .vss/.vssx stencil or "
+             ".vsd/.vsdx drawing file, or a .zip containing one or more, to split "
+             "instead of converting one (use with --split)",
     )
     parser.add_argument(
         "--split",
@@ -797,7 +827,7 @@ def main():
         output_dir = os.path.abspath(args.output)
         input_paths = [input_path]
         zip_tmp_dir = None
-        if zipfile.is_zipfile(input_path) and not is_vssx_file(input_path):
+        if zipfile.is_zipfile(input_path) and not is_visio_ooxml_package(input_path):
             vlog("Input is a zip archive")
             zip_tmp_dir = tempfile.mkdtemp(prefix="devon_zip_")
             try:
@@ -821,11 +851,11 @@ def main():
                 if is_visio_document_file(path):
                     if args.to == "xml":
                         parser.error(
-                            "--to xml is not supported when --input is a .vss/.vssx/.vsd file; "
-                            "use --to svg or --to jpg"
+                            "--to xml is not supported when --input is a .vss/.vssx/.vsd/.vsdx "
+                            "file; use --to svg or --to jpg"
                         )
-                    if is_vsd_file(path):
-                        vlog("Detected a raw .vsd drawing; splitting into per-page files")
+                    if is_drawing_file(path):
+                        vlog("Detected a raw .vsd/.vsdx drawing; splitting into per-page files")
                         written, skipped = split_vsd(path, target_dir, args.to)
                     else:
                         vlog("Detected a raw .vss/.vssx stencil; splitting into per-shape files")
@@ -869,6 +899,12 @@ def main():
             "(its own upload check rejects anything else). Use --input instead to split a "
             ".vsd file locally and offline."
         )
+    if is_vsdx_file(upload_path):
+        sys.exit(
+            "vss.draw.io only accepts classic .vss files for online conversion, not .vsdx "
+            "(its own upload check rejects anything else). Use --input instead to split a "
+            ".vsdx file locally and offline."
+        )
 
     upload_paths = [upload_path]
     upload_zip_tmp_dir = None
@@ -881,9 +917,9 @@ def main():
             shutil.rmtree(upload_zip_tmp_dir, ignore_errors=True)
             with zipfile.ZipFile(upload_path) as zf:
                 names = [n.lower() for n in zf.namelist()]
-                if any(n.endswith((".vssx", ".vsd")) for n in names):
+                if any(n.endswith((".vssx", ".vsd", ".vsdx")) for n in names):
                     sys.exit(
-                        f"{e} (it has .vssx/.vsd files, but vss.draw.io only accepts classic "
+                        f"{e} (it has .vssx/.vsd/.vsdx files, but vss.draw.io only accepts classic "
                         ".vss for online conversion; use --input instead to split them locally)"
                     )
             sys.exit(str(e))

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-09-27
+
+### Added
+
+- `--input` now also accepts a modern `.vsdx` (OOXML) Visio drawing,
+  split via `vsd2raw`/`vsd2xhtml`, the same tools already used for legacy
+  `.vsd` (both handle the OOXML container transparently). `.vsdx` files
+  are also recognized inside zip bundles passed to `--input`/`--upload`,
+  and `--upload` now rejects a `.vsdx` file immediately with a clear
+  message (vss.draw.io only accepts classic `.vss`), matching the
+  existing `.vssx`/`.vsd` handling. Verified against a real file
+  (`Mikrotik_CCR2004_16GS_2S+PC_v2025.vsdx`): its one page ("Page-1")
+  extracted with correctly rendered artwork.
+
+### Fixed
+
+- `.vssx` (stencil) and `.vsdx` (drawing) both share a
+  `visio/document.xml` part in their OOXML zip package, so the previous
+  `is_vssx_file` check matched both, misdetecting a `.vsdx` file as a
+  `.vssx` stencil and routing it through the wrong libvisio tool
+  (`vss2raw`/`vss2xhtml`, which crashed on it). Detection now also checks
+  for `visio/masters/masters.xml` (stencil) vs. `visio/pages/pages.xml`
+  (drawing) to tell the two apart.
+
 ## [0.1.8] - 2026-09-27
 
 ### Fixed
