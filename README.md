@@ -4,7 +4,7 @@
 
 Diagram Extractor for Visio with local and ONline capability (via draw.io)
 
-Version: 0.1.6 (see [CHANGELOG.md](CHANGELOG.md))
+Version: 0.1.7 (see [CHANGELOG.md](CHANGELOG.md))
 
 Works with Microsoft Visio stencil and drawing files two ways:
 
@@ -68,6 +68,7 @@ python3 devon.py --upload Stencil.vss --download Stencil.xml
 | `--timeout`  | `90`                                   | Seconds to wait for conversion/download                    |
 | `--checkconfig` | off                                 | Check that required and optional dependencies are installed, then exit |
 | `--install`  | off                                    | With `--checkconfig`, also attempt to install missing dependencies (Python packages via pip, external tools via the system package manager) |
+| `--verbose`  | off                                    | Print a running commentary of what's happening at each stage, to stderr |
 
 `--upload` and `--input` are mutually exclusive; exactly one is required.
 `--split` is required when using `--input`, and requires `--output` in turn.
@@ -114,6 +115,22 @@ Linux for the package-manager installs). It doesn't touch Chrome/Chromium,
 which has to be installed manually. If no supported package manager is
 found, or a tool has no known package for your package manager, it's
 reported so you can install it manually (see Requirements above).
+
+### Verbose output
+
+Add `--verbose` to any run to get a running commentary on stderr of what's
+happening at each stage: which file is being read, whether it's a zip or a
+raw `.vss`/`.vssx`/`.vsd`/`<mxlibrary>` file, each shape or page as it's
+written, skipped, or rasterized, and, for the online path, each step of
+driving vss.draw.io (loading the page, uploading, confirming the
+checkbox, clicking Convert, waiting for the download). Normal stdout
+output (the final summary lines) is unchanged; verbose lines are prefixed
+`[verbose]` and go to stderr, so piping stdout elsewhere still gets just
+the summary.
+
+```
+python3 devon.py --input Stencil.vssx --split --output shapes/ --to svg --verbose
+```
 
 ### Example
 

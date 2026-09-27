@@ -23,7 +23,7 @@ automatically. The local path additionally needs libvisio's vss2raw/
 vss2xhtml/vsd2raw/vsd2xhtml (and optionally emf2svg-conv, rsvg-convert) on
 PATH; see README.md.
 """
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 __description__ = "Diagram Extractor for Visio with local and ONline capability (via draw.io)"
 
 import argparse
@@ -72,8 +72,17 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 SITE_URL = "https://vss.draw.io"
 
+VERBOSE = False
+
+
+def vlog(message: str) -> None:
+    """Print a stage-progress message to stderr, only when --verbose is set."""
+    if VERBOSE:
+        print(f"[verbose] {message}", file=sys.stderr)
+
 
 def build_driver(download_dir: str, headless: bool) -> webdriver.Chrome:
+    vlog(f"Launching Chrome{' (headless)' if headless else ''}...")
     options = Options()
     if headless:
         options.add_argument("--headless=new")
@@ -106,6 +115,7 @@ def wait_for_result(driver, download_dir: str, timeout: int) -> str:
         finished = [f for f in entries if not f.endswith(".crdownload")]
         in_progress = [f for f in entries if f.endswith(".crdownload")]
         if finished and not in_progress:
+            vlog(f"Downloaded {finished[0]}")
             return os.path.join(download_dir, finished[0])
 
         time.sleep(0.5)
@@ -117,18 +127,23 @@ def convert_one_vss(driver, download_dir: str, upload_path: str, timeout: int) -
     (a fresh page load each time keeps the site's state clean between
     conversions) and return the path of the resulting download."""
     wait = WebDriverWait(driver, timeout)
+    vlog(f"Loading {SITE_URL}...")
     driver.get(SITE_URL)
 
+    vlog(f"Uploading {upload_path}...")
     file_input = wait.until(EC.presence_of_element_located((By.ID, "fileInput")))
     file_input.send_keys(upload_path)
 
+    vlog("Confirming the no-sensitive-information checkbox...")
     checkbox = wait.until(EC.element_to_be_clickable((By.ID, "confirmCheckbox")))
     if not checkbox.is_selected():
         checkbox.click()
 
+    vlog("Clicking Convert...")
     convert_btn = wait.until(EC.element_to_be_clickable((By.ID, "convertBtn")))
     convert_btn.click()
 
+    vlog("Waiting for the conversion to finish...")
     return wait_for_result(driver, download_dir, timeout)
 
 
@@ -210,6 +225,7 @@ def split_library(content: str, out_dir: str, fmt: str = "xml") -> tuple[int, in
     shape's embedded artwork instead (rasterized to JPEG for "jpg"),
     skipping shapes that have none. Returns (written, skipped)."""
     shapes = parse_library(content)
+    vlog(f"Parsed {len(shapes)} shape(s) from the library")
     os.makedirs(out_dir, exist_ok=True)
     seen = {}
     written = 0
@@ -217,20 +233,25 @@ def split_library(content: str, out_dir: str, fmt: str = "xml") -> tuple[int, in
     tmp_dir = tempfile.mkdtemp(prefix="devon_raster_") if fmt == "jpg" else None
     try:
         for i, shape in enumerate(shapes):
+            title = shape.get("title") or f"shape_{i}"
             if fmt in ("svg", "jpg"):
                 svg_bytes = extract_svg(shape["xml"])
                 if svg_bytes is None:
+                    vlog(f"Skipping '{title}': no visible artwork")
                     skipped += 1
                     continue
                 if fmt == "svg":
                     filename = safe_shape_filename(shape.get("title"), i, seen, "svg")
+                    vlog(f"Writing '{title}' to {filename}")
                     with open(os.path.join(out_dir, filename), "wb") as f:
                         f.write(svg_bytes)
                 else:
                     filename = safe_shape_filename(shape.get("title"), i, seen, "jpg")
+                    vlog(f"Rasterizing '{title}' to {filename}")
                     rasterize_svg_to_jpg(svg_bytes, os.path.join(out_dir, filename), tmp_dir, i)
             else:
                 filename = safe_shape_filename(shape.get("title"), i, seen, "xml")
+                vlog(f"Writing '{title}' to {filename}")
                 shape_content = f"<mxlibrary>{json.dumps([shape], ensure_ascii=False)}</mxlibrary>"
                 with open(os.path.join(out_dir, filename), "w") as f:
                     f.write(shape_content)
@@ -293,6 +314,7 @@ def extract_files_from_zip(zip_path: str, tmp_dir: str, ext_groups) -> list:
     tmp_dir. ext_groups is a list of extension tuples, e.g. [(".vss",)] or
     [(".vss",), (".xml",)] to fall back to .xml if there's no .vss. Returns
     the extracted paths. Raises ValueError if nothing matches."""
+    vlog(f"Reading zip archive {zip_path}...")
     with zipfile.ZipFile(zip_path) as zf:
         names = [n for n in zf.namelist() if not n.endswith("/")]
         for exts in ext_groups:
@@ -300,6 +322,7 @@ def extract_files_from_zip(zip_path: str, tmp_dir: str, ext_groups) -> list:
             if candidates:
                 for name in candidates:
                     zf.extract(name, tmp_dir)
+                vlog(f"Extracted {len(candidates)} file(s): {', '.join(candidates)}")
                 return [os.path.join(tmp_dir, name) for name in candidates]
         wanted = " or ".join(exts[0] for exts in ext_groups)
         raise ValueError(f"No {wanted} file found inside {zip_path}")
@@ -382,6 +405,7 @@ def recover_unrenderable_images(block: str, tmp_dir: str) -> str:
         try:
             emf_bytes = base64.b64decode(data_match.group(2))
             counter[0] += 1
+            vlog(f"Recovering embedded EMF/WMF image #{counter[0]} via emf2svg-conv...")
             return convert_emf_to_svg_group(
                 emf_bytes, attrs.get("x", "0"), attrs.get("y", "0"),
                 attrs.get("width", "0"), attrs.get("height", "0"),
@@ -411,11 +435,13 @@ def split_visio_document(doc_path: str, out_dir: str, fmt: str, raw_tool: str, x
                 "(e.g. `brew install libvisio`) to split this file directly."
             )
 
+    vlog(f"Running {raw_tool} on {doc_path} to get item names...")
     raw_out = subprocess.run(
         [raw_tool, doc_path], capture_output=True, check=True,
     ).stdout.decode("utf-8", errors="replace")
     names = VSS_STARTPAGE_RE.findall(raw_out)
 
+    vlog(f"Running {xhtml_tool} on {doc_path} to render artwork...")
     svg_out = subprocess.run(
         [xhtml_tool, doc_path], capture_output=True, check=True,
     ).stdout.decode("utf-8", errors="replace")
@@ -426,6 +452,7 @@ def split_visio_document(doc_path: str, out_dir: str, fmt: str, raw_tool: str, x
             f"libvisio produced {len(names)} name(s) but {len(blocks)} rendered "
             "item(s); can't reliably pair them up."
         )
+    vlog(f"Paired {len(names)} name(s) with their rendered artwork")
 
     os.makedirs(out_dir, exist_ok=True)
     seen = {}
@@ -436,14 +463,17 @@ def split_visio_document(doc_path: str, out_dir: str, fmt: str, raw_tool: str, x
         for i, (name, block) in enumerate(zip(names, blocks)):
             block = recover_unrenderable_images(block, tmp_dir)
             if not block_has_renderable_content(block):
+                vlog(f"Skipping '{name}': no renderable content")
                 skipped += 1
                 continue
             svg_doc = '<?xml version="1.0" encoding="UTF-8"?>\n' + block + "\n"
             if fmt == "jpg":
                 filename = safe_shape_filename(name, i, seen, "jpg")
+                vlog(f"Rasterizing '{name}' to {filename}")
                 rasterize_svg_to_jpg(svg_doc, os.path.join(out_dir, filename), tmp_dir, i)
             else:
                 filename = safe_shape_filename(name, i, seen, "svg")
+                vlog(f"Writing '{name}' to {filename}")
                 with open(os.path.join(out_dir, filename), "w") as f:
                     f.write(svg_doc)
             written += 1
@@ -714,7 +744,15 @@ def main():
              "packages via pip and missing external command-line tools via "
              "the system package manager",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print a running commentary of what's happening at each stage, to stderr",
+    )
     args = parser.parse_args()
+
+    global VERBOSE
+    VERBOSE = args.verbose
 
     if args.install and not args.checkconfig:
         parser.error("--install requires --checkconfig")
@@ -724,9 +762,11 @@ def main():
 
     # Any other flag: verify required dependencies before doing anything
     # else (quiet on success; the full report is printed only on failure).
+    vlog("Checking required dependencies...")
     rc = check_config(quiet=True)
     if rc != 0:
         sys.exit(rc)
+    vlog("All required dependencies are present.")
 
     if args.input and args.upload:
         parser.error("--input and --upload cannot be used together")
@@ -743,6 +783,7 @@ def main():
 
     if args.input:
         input_path = os.path.abspath(args.input)
+        vlog(f"Reading input: {input_path}")
         if not os.path.isfile(input_path):
             sys.exit(f"Input file not found: {input_path}")
 
@@ -750,6 +791,7 @@ def main():
         input_paths = [input_path]
         zip_tmp_dir = None
         if zipfile.is_zipfile(input_path) and not is_vssx_file(input_path):
+            vlog("Input is a zip archive")
             zip_tmp_dir = tempfile.mkdtemp(prefix="devon_zip_")
             try:
                 input_paths = extract_inputs_from_zip(input_path, zip_tmp_dir)
@@ -762,6 +804,7 @@ def main():
             total_written = 0
             total_skipped = 0
             for path in input_paths:
+                vlog(f"Processing {path}")
                 target_dir = output_dir
                 if multiple:
                     stem = os.path.splitext(os.path.basename(path))[0]
@@ -775,13 +818,17 @@ def main():
                             "use --to svg or --to jpg"
                         )
                     if is_vsd_file(path):
+                        vlog("Detected a raw .vsd drawing; splitting into per-page files")
                         written, skipped = split_vsd(path, target_dir, args.to)
                     else:
+                        vlog("Detected a raw .vss/.vssx stencil; splitting into per-shape files")
                         written, skipped = split_vss(path, target_dir, args.to)
                 else:
+                    vlog("Detected an <mxlibrary> file; parsing and splitting")
                     with open(path, "r") as f:
                         content = f.read()
                     written, skipped = split_library(content, target_dir, args.to)
+                vlog(f"Wrote {written} shape(s), skipped {skipped}, from {path}")
 
                 if multiple:
                     print(f"Split {written} shape(s) from '{os.path.basename(path)}' into: {target_dir}")
@@ -800,6 +847,7 @@ def main():
         return
 
     upload_path = os.path.abspath(args.upload)
+    vlog(f"Reading upload: {upload_path}")
     if not os.path.isfile(upload_path):
         sys.exit(f"Upload file not found: {upload_path}")
     if is_vssx_file(upload_path):
@@ -818,6 +866,7 @@ def main():
     upload_paths = [upload_path]
     upload_zip_tmp_dir = None
     if zipfile.is_zipfile(upload_path):
+        vlog("Upload is a zip archive")
         upload_zip_tmp_dir = tempfile.mkdtemp(prefix="devon_zip_")
         try:
             upload_paths = extract_files_from_zip(upload_path, upload_zip_tmp_dir, [(".vss",)])
@@ -838,6 +887,7 @@ def main():
     driver = build_driver(tmp_download_dir, args.headless)
     try:
         for path in upload_paths:
+            vlog(f"Converting {path}")
             base = os.path.splitext(os.path.basename(path))[0]
             if multiple:
                 # --download is a directory when converting multiple stencils.
@@ -855,6 +905,7 @@ def main():
             print(f"Converted library saved to: {download_target}")
 
             if args.split:
+                vlog(f"Splitting {download_target}")
                 split_output = os.path.abspath(args.output)
                 if multiple:
                     safe_base = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("_") or "stencil"
@@ -866,6 +917,7 @@ def main():
                 if skipped:
                     print(f"Skipped {skipped} shape(s) with no visible artwork", file=sys.stderr)
     finally:
+        vlog("Closing Chrome and cleaning up temporary files...")
         driver.quit()
         shutil.rmtree(tmp_download_dir, ignore_errors=True)
         if upload_zip_tmp_dir:

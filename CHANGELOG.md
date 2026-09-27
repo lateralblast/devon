@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-09-27
+
+### Added
+
+- `--verbose` flag: prints a `[verbose]`-prefixed running commentary to
+  stderr of what's happening at each stage (file detection, zip
+  extraction, per-shape/page writes and skips, rasterization, and each
+  step of the online vss.draw.io conversion). Normal stdout output is
+  unchanged.
+
 ## [0.1.6] - 2026-09-27
 
 ### Added
