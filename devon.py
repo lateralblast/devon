@@ -24,7 +24,7 @@ automatically. The local path additionally needs libvisio's vss2raw/
 vss2xhtml/vsd2raw/vsd2xhtml (and optionally emf2svg-conv, rsvg-convert) on
 PATH; see README.md.
 """
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 __description__ = "Diagram Extractor for Visio with local and ONline capability (via draw.io)"
 
 import argparse
@@ -627,6 +627,109 @@ def split_one_input(path: str, target_dir: str, fmt: str) -> tuple[int, int]:
     return split_library(content, target_dir, fmt)
 
 
+def describe_input_file(path: str) -> str:
+    """Return a short human-readable description of path's detected file
+    type, for --inspect."""
+    if is_vsd_file(path):
+        return "legacy Visio drawing (.vsd)"
+    if is_vss_file(path):
+        return "legacy Visio stencil (.vss)"
+    if is_vssx_file(path):
+        return "modern Visio stencil (.vssx)"
+    if is_vsdx_file(path):
+        return "modern Visio drawing (.vsdx)"
+    if is_vstx_file(path):
+        return "modern Visio template (.vstx)"
+    if is_vsx_file(path):
+        return "legacy Visio XML stencil (.vsx)"
+    return "draw.io/diagrams.net <mxlibrary> library"
+
+
+def get_item_names(path: str, raw_tool: str) -> list:
+    """Run raw_tool on path and return each item's real name (from the
+    startPage(...) lines), without touching the xhtml-tool or writing
+    anything. Used by --inspect to list a raw stencil/drawing/template's
+    contents without splitting it."""
+    if shutil.which(raw_tool) is None:
+        raise RuntimeError(
+            f"'{raw_tool}' not found on PATH. Install libvisio "
+            "(e.g. `brew install libvisio`) to inspect this file."
+        )
+    raw_out = subprocess.run(
+        [raw_tool, path], capture_output=True, check=True,
+    ).stdout.decode("utf-8", errors="replace")
+    return VSS_STARTPAGE_RE.findall(raw_out)
+
+
+def inspect_one_file(path: str, label: str, indent: str = "") -> None:
+    """Print label with path's detected file type and the names of what
+    it contains (master shapes, pages, or library shapes), reading or
+    running just enough to list them (no xhtml-tool, no rasterizing, no
+    writing). Used by --inspect. Everything that can fail (running
+    raw_tool, parsing the library) happens before anything is printed, so
+    a failure here (caught by the caller) never leaves behind a
+    misleading partial report."""
+    if is_visio_document_file(path):
+        if is_drawing_file(path):
+            item_label, raw_tool = "page", "vsd2raw"
+        else:
+            item_label, raw_tool = "master shape", "vss2raw"
+        names = get_item_names(path, raw_tool)
+    else:
+        with open(path, "r") as f:
+            content = f.read()
+        item_label = "shape"
+        names = [shape.get("title") or "(untitled)" for shape in parse_library(content)]
+
+    print(f"{indent}{label}: {describe_input_file(path)}")
+    plural = "" if len(names) == 1 else "s"
+    print(f"{indent}  {len(names)} {item_label}{plural}:")
+    for name in names:
+        print(f"{indent}    - {name}")
+
+
+def inspect_input(input_path: str, recursive: bool) -> None:
+    """Top-level driver for --inspect: resolves input_path (a single raw
+    file, an <mxlibrary> file, a zip bundle, or a directory) the same way
+    --split would, but only reports each resolved file's detected type
+    and contents, writing nothing. A per-file or per-bundle failure is
+    reported and skipped rather than aborting the rest of the scan."""
+    if os.path.isdir(input_path):
+        found = find_directory_inputs(input_path, recursive)
+        if not found:
+            sys.exit(f"No supported files found {'under' if recursive else 'in'} {input_path}")
+        found_paths, labels = found, [os.path.relpath(p, input_path) for p in found]
+    else:
+        found_paths, labels = [input_path], [input_path]
+
+    zip_tmp_dirs = []
+    try:
+        for path, label in zip(found_paths, labels):
+            if zipfile.is_zipfile(path) and not is_visio_ooxml_package(path):
+                zip_tmp_dir = tempfile.mkdtemp(prefix="devon_zip_")
+                zip_tmp_dirs.append(zip_tmp_dir)
+                try:
+                    bundled = extract_inputs_from_zip(path, zip_tmp_dir)
+                except ValueError as e:
+                    print(f"{label}: {e}", file=sys.stderr)
+                    continue
+                print(f"{label}: zip bundle ({len(bundled)} file(s))")
+                for bundled_path in bundled:
+                    try:
+                        inspect_one_file(bundled_path, os.path.basename(bundled_path), indent="  ")
+                    except Exception as e:
+                        print(f"  {os.path.basename(bundled_path)}: {e}", file=sys.stderr)
+                continue
+
+            try:
+                inspect_one_file(path, label)
+            except Exception as e:
+                print(f"{label}: {e}", file=sys.stderr)
+    finally:
+        for zip_tmp_dir in zip_tmp_dirs:
+            shutil.rmtree(zip_tmp_dir, ignore_errors=True)
+
+
 BROWSER_BINARIES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")
 BROWSER_PATHS = (
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -992,6 +1095,13 @@ def main():
         help="With --input as a directory, also descend into its subdirectories "
              "(by default, only the files directly under it are split)",
     )
+    parser.add_argument(
+        "--inspect",
+        action="store_true",
+        help="Examine --input (a file, zip bundle, or directory) and report each "
+             "file's detected type and the master shapes/pages/shapes it contains, "
+             "without splitting anything",
+    )
     args = parser.parse_args()
 
     global VERBOSE
@@ -1013,8 +1123,8 @@ def main():
 
     if args.input and args.upload:
         parser.error("--input and --upload cannot be used together")
-    if args.input and not args.split:
-        parser.error("--split is required when using --input")
+    if args.input and not args.split and not args.inspect:
+        parser.error("--split or --inspect is required when using --input")
     if not args.input and not args.upload:
         parser.error("one of --upload or --input is required")
     if args.output and not args.split:
@@ -1023,6 +1133,10 @@ def main():
         parser.error("--to requires --split")
     if args.recursive and not args.input:
         parser.error("--recursive requires --input")
+    if args.inspect and not args.input:
+        parser.error("--inspect requires --input")
+    if args.inspect and args.split:
+        parser.error("--inspect cannot be used with --split")
 
     if args.input:
         input_path = os.path.abspath(args.input)
@@ -1032,6 +1146,10 @@ def main():
             sys.exit(f"--recursive requires --input to be a directory: {input_path}")
         if not input_is_dir and not os.path.isfile(input_path):
             sys.exit(f"Input not found: {input_path}")
+
+        if args.inspect:
+            inspect_input(input_path, args.recursive)
+            return
 
         if args.output:
             output_dir = os.path.abspath(args.output)

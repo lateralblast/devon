@@ -4,7 +4,7 @@
 
 Diagram Extractor for Visio with local and ONline capability (via draw.io)
 
-Version: 0.2.5 (see [CHANGELOG.md](CHANGELOG.md))
+Version: 0.2.6 (see [CHANGELOG.md](CHANGELOG.md))
 
 Works with Microsoft Visio stencil and drawing files two ways:
 
@@ -86,7 +86,8 @@ python3 devon.py --upload Stencil.vss --download Stencil.xml
 | `--download` | `<upload basename>.xml` in the cwd    | Where to save the converted library file (a directory instead, if `--upload` is a `.zip` with multiple `.vss` files) |
 | `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx`/`.vsx` stencil or `.vsd`/`.vsdx`/`.vstx` drawing/template file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`); or a directory, to split every supported file directly under it |
 | `--split`    | off                                    | Split the library/stencil file into individual per-shape files |
-| `--recursive` | off                                    | With `--input` as a directory, also descend into its subdirectories (by default, only the files directly under it are split) |
+| `--inspect`  | off                                    | Examine `--input` and report each file's detected type and contents, without splitting anything |
+| `--recursive` | off                                    | With `--input` as a directory, also descend into its subdirectories (by default, only the files directly under it are split/inspected) |
 | `--output`   | basename of `--input`/`--upload`, minus its extension | Directory to write per-shape files into (used with `--split`) |
 | `--to`       | `xml`                                  | Output format for `--split`: `xml` (single-shape library files), `svg` (each shape's embedded artwork), `jpg` (rasterized JPEG), or `png` (rasterized PNG) |
 | `--headless` | off                                    | Run Chrome without a visible window                        |
@@ -96,9 +97,10 @@ python3 devon.py --upload Stencil.vss --download Stencil.xml
 | `--verbose`  | off                                    | Print a running commentary of what's happening at each stage, to stderr |
 
 `--upload` and `--input` are mutually exclusive; exactly one is required.
-`--split` is required when using `--input`. `--output` defaults to the
-basename of `--input`/`--upload` minus its extension (e.g. `--input
-Stencil.vsdx` defaults to a `Stencil/` directory) when not given.
+`--split` or `--inspect` is required when using `--input`, and the two
+can't be combined. `--output` defaults to the basename of
+`--input`/`--upload` minus its extension (e.g. `--input Stencil.vsdx`
+defaults to a `Stencil/` directory) when not given.
 `--to` only applies alongside `--split`.
 `--install` requires `--checkconfig`.
 
@@ -359,6 +361,34 @@ Skipping vendorA/notes.xml: Not an <mxlibrary>...</mxlibrary> file
 Split 340 shape(s) total from 12 file(s) under: stencils/
 Failed to split 1 file(s); see messages above
 ```
+
+### Inspecting a file without splitting it
+
+Pass `--inspect` instead of `--split` to see what a file is and what it
+contains without writing anything:
+
+```
+python3 devon.py --input Stencil.vssx --inspect
+```
+
+```
+Stencil.vssx: modern Visio stencil (.vssx)
+  54 master shapes:
+    - Server Rack
+    - Switch 24-port
+    ...
+```
+
+`--inspect` accepts the same `--input` targets as `--split` does: a raw
+`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx` file, an `<mxlibrary>` file,
+a `.zip` bundle (each contained file inspected in turn), or a directory
+(add `--recursive` to also descend into subdirectories). For a raw
+stencil/drawing/template it only runs the raw-tool (`vss2raw` or
+`vsd2raw`) to list names, skipping the xhtml-tool, EMF recovery, and
+rasterization entirely, so it's much cheaper than actually splitting.
+`--output` and `--to` don't apply, since nothing is written; a file that
+fails to inspect (e.g. an unrelated `.xml` file, or a corrupt document)
+is reported and the scan continues rather than aborting.
 
 ## Notes
 

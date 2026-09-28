@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-09-28
+
+### Added
+
+- `--inspect` flag: examines `--input` (a raw file, an `<mxlibrary>` file,
+  a zip bundle, or a directory, optionally with `--recursive`) and
+  reports each file's detected type and the names of the master
+  shapes/pages/shapes it contains, without writing anything. For a raw
+  stencil/drawing/template, this runs only the raw-tool (`vss2raw` or
+  `vsd2raw`) to list names, skipping the xhtml-tool, EMF recovery, and
+  rasterization entirely, so it's much cheaper than `--split`. Requires
+  `--input` and cannot be combined with `--split`. A per-file failure
+  (e.g. an unrelated `.xml` file that isn't a real `<mxlibrary>`) is
+  reported and the scan continues, the same way `--recursive` already
+  handles failures. New `describe_input_file`, `get_item_names`,
+  `inspect_one_file`, and `inspect_input`.
+
 ## [0.2.5] - 2026-09-28
 
 ### Added
