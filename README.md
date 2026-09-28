@@ -49,6 +49,10 @@ can appear in either format. See
 for the offline formats, and [Checking your setup](#checking-your-setup)
 for which external tools each one needs.
 
+## Help Support Development
+
+Fund me here: https://ko-fi.com/richardatlateralblast
+
 ## Requirements
 
 - Python 3
