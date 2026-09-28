@@ -4,7 +4,7 @@
 
 Diagram Extractor for Visio with local and ONline capability (via draw.io)
 
-Version: 0.2.2 (see [CHANGELOG.md](CHANGELOG.md))
+Version: 0.2.4 (see [CHANGELOG.md](CHANGELOG.md))
 
 Works with Microsoft Visio stencil and drawing files two ways:
 
@@ -81,8 +81,9 @@ python3 devon.py --upload Stencil.vss --download Stencil.xml
 |--------------|---------------------------------------|------------------------------------------------------------|
 | `--upload`   | *(required unless `--input` is used)* | Path to the `.vss` file to upload, or a `.zip` containing one or more |
 | `--download` | `<upload basename>.xml` in the cwd    | Where to save the converted library file (a directory instead, if `--upload` is a `.zip` with multiple `.vss` files) |
-| `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx`/`.vsx` stencil or `.vsd`/`.vsdx` drawing file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`) |
+| `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx`/`.vsx` stencil or `.vsd`/`.vsdx` drawing file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`); or a directory, to split every supported file directly under it |
 | `--split`    | off                                    | Split the library/stencil file into individual per-shape files |
+| `--recursive` | off                                    | With `--input` as a directory, also descend into its subdirectories (by default, only the files directly under it are split) |
 | `--output`   | basename of `--input`/`--upload`, minus its extension | Directory to write per-shape files into (used with `--split`) |
 | `--to`       | `xml`                                  | Output format for `--split`: `xml` (single-shape library files), `svg` (each shape's embedded artwork), `jpg` (rasterized JPEG), or `png` (rasterized PNG) |
 | `--headless` | off                                    | Run Chrome without a visible window                        |
@@ -313,6 +314,42 @@ libemf2svg) is on `PATH`, those are rendered to real SVG and recovered
 automatically; otherwise they're skipped (reported the same way as above)
 rather than writing a broken image. With `emf2svg-conv` installed this path
 can recover every item, entirely offline.
+
+### Splitting a whole directory
+
+`--input` also accepts a directory: every
+`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.xml`/`.zip` file found directly
+under it (not its subdirectories) is split the same way passing it
+directly to `--input` would be:
+
+```
+python3 devon.py --input stencils/ --split --output shapes/ --to svg
+```
+
+Add `--recursive` to also descend into subdirectories:
+
+```
+python3 devon.py --input stencils/ --recursive --split --output shapes/ --to svg
+```
+
+Each file's output goes into a subdirectory mirroring its path relative
+to the scanned directory (e.g. `stencils/vendorA/Widget.vssx` lands in
+`shapes/vendorA/Widget/`), so files with the same name in different
+subdirectories never collide. A `.zip` found during the scan is expanded
+in place, the same way a top-level `--input` zip already is.
+
+Unlike a single-file `--input` run, a file that fails here (for example,
+an unrelated `.xml` file that isn't a real `<mxlibrary>`) is reported and
+skipped rather than aborting the whole scan, since scanning a directory
+is far more likely than a deliberately-built zip to sweep up something
+that only coincidentally matches a known extension. The final summary
+reports how many files failed, if any:
+
+```
+Skipping vendorA/notes.xml: Not an <mxlibrary>...</mxlibrary> file
+Split 340 shape(s) total from 12 file(s) under: stencils/
+Failed to split 1 file(s); see messages above
+```
 
 ## Notes
 

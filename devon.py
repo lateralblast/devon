@@ -24,7 +24,7 @@ automatically. The local path additionally needs libvisio's vss2raw/
 vss2xhtml/vsd2raw/vsd2xhtml (and optionally emf2svg-conv, rsvg-convert) on
 PATH; see README.md.
 """
-__version__ = "0.2.2"
+__version__ = "0.2.4"
 __description__ = "Diagram Extractor for Visio with local and ONline capability (via draw.io)"
 
 import argparse
@@ -337,25 +337,22 @@ def is_visio_ooxml_package(path: str) -> bool:
 
 
 def is_vssx_file(path: str) -> bool:
-    """True if path is a modern Visio STENCIL (.vssx/.vssm), as opposed to
-    a drawing (.vsdx/.vsdm): both are OOXML packages with a
-    "visio/document.xml" part, but only a stencil also has a
-    "visio/masters/masters.xml" part."""
-    if not is_visio_ooxml_package(path):
-        return False
-    with zipfile.ZipFile(path) as zf:
-        return "visio/masters/masters.xml" in zf.namelist()
+    """True if path is a modern Visio STENCIL (.vssx/.vssm): an OOXML
+    Visio package whose extension marks it as a stencil. Content alone
+    can't reliably tell a stencil from a drawing (.vsdx/.vsdm) here, the
+    same way it can't for the legacy .vss/.vsd pair: a stencil can carry
+    a "visio/pages/pages.xml" part for its own helper preview page, and a
+    drawing can carry a "visio/masters/masters.xml" part for local copies
+    of the master shapes used on its pages, so either part can appear in
+    either format."""
+    return is_visio_ooxml_package(path) and path.lower().endswith((".vssx", ".vssm"))
 
 
 def is_vsdx_file(path: str) -> bool:
-    """True if path is a modern Visio DRAWING (.vsdx/.vsdm), as opposed to
-    a stencil (.vssx/.vssm): both are OOXML packages with a
-    "visio/document.xml" part, but only a drawing also has a
-    "visio/pages/pages.xml" part."""
-    if not is_visio_ooxml_package(path):
-        return False
-    with zipfile.ZipFile(path) as zf:
-        return "visio/pages/pages.xml" in zf.namelist()
+    """True if path is a modern Visio DRAWING (.vsdx/.vsdm): an OOXML
+    Visio package whose extension marks it as a drawing. See is_vssx_file
+    for why content alone can't reliably tell the two apart."""
+    return is_visio_ooxml_package(path) and path.lower().endswith((".vsdx", ".vsdm"))
 
 
 def is_visio_xml_document(path: str) -> bool:
@@ -585,6 +582,29 @@ def split_vsd(vsd_path: str, out_dir: str, fmt: str = "svg") -> tuple[int, int]:
     return split_visio_document(vsd_path, out_dir, fmt, "vsd2raw", "vsd2xhtml")
 
 
+def split_one_input(path: str, target_dir: str, fmt: str) -> tuple[int, int]:
+    """Dispatch a single resolved --input file (a raw Visio document, or
+    an <mxlibrary> XML file) to the matching split_* function, based on
+    is_visio_document_file/is_drawing_file, logging the detected type.
+    Returns (written, skipped). Exits if fmt is "xml" and path is a raw
+    document, since there's no per-shape library format for those."""
+    if is_visio_document_file(path):
+        if fmt == "xml":
+            sys.exit(
+                "--to xml is not supported when --input is a .vss/.vssx/.vsd/.vsdx/.vsx "
+                "file; use --to svg, --to jpg, or --to png"
+            )
+        if is_drawing_file(path):
+            vlog("Detected a raw .vsd/.vsdx drawing; splitting into per-page files")
+            return split_vsd(path, target_dir, fmt)
+        vlog("Detected a raw .vss/.vssx/.vsx stencil; splitting into per-shape files")
+        return split_vss(path, target_dir, fmt)
+    vlog("Detected an <mxlibrary> file; parsing and splitting")
+    with open(path, "r") as f:
+        content = f.read()
+    return split_library(content, target_dir, fmt)
+
+
 BROWSER_BINARIES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")
 BROWSER_PATHS = (
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -779,6 +799,106 @@ def check_config(install: bool = False, quiet: bool = False) -> int:
     return 0 if all_required_present else 1
 
 
+# Extensions directory --input treats as candidate input files; everything
+# else is silently skipped, same as a zip bundle only ever looks at files
+# with one of these extensions.
+KNOWN_INPUT_EXTENSIONS = (".vss", ".vssx", ".vsd", ".vsdx", ".vsx", ".xml", ".zip")
+
+
+def find_directory_inputs(root_dir: str, recursive: bool) -> list:
+    """Return every file directly under root_dir matching
+    KNOWN_INPUT_EXTENSIONS (or, if recursive, under any of its
+    subdirectories too), sorted for stable output."""
+    found = []
+    if recursive:
+        for dirpath, _, filenames in os.walk(root_dir):
+            for filename in filenames:
+                if filename.lower().endswith(KNOWN_INPUT_EXTENSIONS):
+                    found.append(os.path.join(dirpath, filename))
+    else:
+        for filename in os.listdir(root_dir):
+            full_path = os.path.join(root_dir, filename)
+            if os.path.isfile(full_path) and filename.lower().endswith(KNOWN_INPUT_EXTENSIONS):
+                found.append(full_path)
+    found.sort()
+    return found
+
+
+def split_directory(root_dir: str, output_dir: str, fmt: str, recursive: bool) -> None:
+    """Split every file matching KNOWN_INPUT_EXTENSIONS directly under
+    root_dir (or, if recursive, under any of its subdirectories too) via
+    split_one_input, writing into a subdirectory of output_dir that
+    mirrors each file's path relative to root_dir (each path component
+    sanitized the same way a zip bundle's per-file subdirectories already
+    are), so same-named files in different subdirectories never collide.
+    A file that's itself a zip bundle is expanded the same way a
+    top-level --input zip is (see extract_inputs_from_zip). Unlike a
+    single --input/--upload run, a per-file failure here is reported and
+    skipped rather than aborting the whole scan, since a directory scan is
+    far more likely than a curated zip to sweep up an unrelated file that
+    only coincidentally matches a known extension."""
+    found = find_directory_inputs(root_dir, recursive)
+    if not found:
+        sys.exit(f"No supported files found {'under' if recursive else 'in'} {root_dir}")
+    vlog(f"Found {len(found)} candidate file(s) {'under' if recursive else 'in'} {root_dir}")
+
+    total_written = 0
+    total_skipped = 0
+    total_failed = 0
+    zip_tmp_dirs = []
+    try:
+        for found_path in found:
+            rel_display = os.path.relpath(found_path, root_dir)
+            rel_stem = os.path.splitext(rel_display)[0]
+            safe_parts = [
+                re.sub(r"[^A-Za-z0-9._-]+", "_", part).strip("_") or "stencil"
+                for part in rel_stem.split(os.sep)
+            ]
+            target_dir = os.path.join(output_dir, *safe_parts)
+
+            paths_to_process = [found_path]
+            if zipfile.is_zipfile(found_path) and not is_visio_ooxml_package(found_path):
+                vlog(f"{rel_display} is a zip archive")
+                zip_tmp_dir = tempfile.mkdtemp(prefix="devon_zip_")
+                zip_tmp_dirs.append(zip_tmp_dir)
+                try:
+                    paths_to_process = extract_inputs_from_zip(found_path, zip_tmp_dir)
+                except ValueError as e:
+                    print(f"Skipping {rel_display}: {e}", file=sys.stderr)
+                    total_failed += 1
+                    continue
+
+            multiple_inner = len(paths_to_process) > 1
+            for path in paths_to_process:
+                vlog(f"Processing {path}")
+                inner_target_dir = target_dir
+                if multiple_inner:
+                    stem = os.path.splitext(os.path.basename(path))[0]
+                    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("_") or "stencil"
+                    inner_target_dir = os.path.join(target_dir, safe_stem)
+
+                try:
+                    written, skipped = split_one_input(path, inner_target_dir, fmt)
+                except Exception as e:
+                    print(f"Skipping {rel_display}: {e}", file=sys.stderr)
+                    total_failed += 1
+                    continue
+                vlog(f"Wrote {written} shape(s), skipped {skipped}, from {path}")
+                print(f"Split {written} shape(s) from '{rel_display}' into: {inner_target_dir}")
+                total_written += written
+                total_skipped += skipped
+    finally:
+        for zip_tmp_dir in zip_tmp_dirs:
+            shutil.rmtree(zip_tmp_dir, ignore_errors=True)
+
+    where = "under" if recursive else "in"
+    print(f"Split {total_written} shape(s) total from {len(found)} file(s) {where}: {root_dir}")
+    if total_skipped:
+        print(f"Skipped {total_skipped} shape(s) with no visible artwork", file=sys.stderr)
+    if total_failed:
+        print(f"Failed to split {total_failed} file(s); see messages above", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convert a Visio .vss stencil via vss.draw.io, or split a .vss/.vssx/.vsd/.vsdx/.vsx file locally"
@@ -802,7 +922,9 @@ def main():
         "--input",
         help="Path to an existing <mxlibrary> file, a raw .vss/.vssx/.vsx stencil "
              "or .vsd/.vsdx drawing file, or a .zip containing one or more, to "
-             "split instead of converting one (use with --split)",
+             "split instead of converting one (use with --split); or a directory, "
+             "to split every supported file directly under it (add --recursive "
+             "to also descend into its subdirectories)",
     )
     parser.add_argument(
         "--split",
@@ -842,6 +964,12 @@ def main():
         action="store_true",
         help="Print a running commentary of what's happening at each stage, to stderr",
     )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="With --input as a directory, also descend into its subdirectories "
+             "(by default, only the files directly under it are split)",
+    )
     args = parser.parse_args()
 
     global VERBOSE
@@ -871,12 +999,17 @@ def main():
         parser.error("--output requires --split")
     if args.to != "xml" and not args.split:
         parser.error("--to requires --split")
+    if args.recursive and not args.input:
+        parser.error("--recursive requires --input")
 
     if args.input:
         input_path = os.path.abspath(args.input)
         vlog(f"Reading input: {input_path}")
-        if not os.path.isfile(input_path):
-            sys.exit(f"Input file not found: {input_path}")
+        input_is_dir = os.path.isdir(input_path)
+        if args.recursive and not input_is_dir:
+            sys.exit(f"--recursive requires --input to be a directory: {input_path}")
+        if not input_is_dir and not os.path.isfile(input_path):
+            sys.exit(f"Input not found: {input_path}")
 
         if args.output:
             output_dir = os.path.abspath(args.output)
@@ -885,6 +1018,11 @@ def main():
                 no_spaces(os.path.splitext(os.path.basename(input_path))[0]) or "output"
             )
             vlog(f"--output not given; defaulting to {output_dir}")
+
+        if input_is_dir:
+            split_directory(input_path, output_dir, args.to, args.recursive)
+            return
+
         input_paths = [input_path]
         zip_tmp_dir = None
         if zipfile.is_zipfile(input_path) and not is_visio_ooxml_package(input_path):
@@ -908,23 +1046,7 @@ def main():
                     safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("_") or "stencil"
                     target_dir = os.path.join(output_dir, safe_stem)
 
-                if is_visio_document_file(path):
-                    if args.to == "xml":
-                        parser.error(
-                            "--to xml is not supported when --input is a .vss/.vssx/.vsd/.vsdx/.vsx "
-                            "file; use --to svg, --to jpg, or --to png"
-                        )
-                    if is_drawing_file(path):
-                        vlog("Detected a raw .vsd/.vsdx drawing; splitting into per-page files")
-                        written, skipped = split_vsd(path, target_dir, args.to)
-                    else:
-                        vlog("Detected a raw .vss/.vssx/.vsx stencil; splitting into per-shape files")
-                        written, skipped = split_vss(path, target_dir, args.to)
-                else:
-                    vlog("Detected an <mxlibrary> file; parsing and splitting")
-                    with open(path, "r") as f:
-                        content = f.read()
-                    written, skipped = split_library(content, target_dir, args.to)
+                written, skipped = split_one_input(path, target_dir, args.to)
                 vlog(f"Wrote {written} shape(s), skipped {skipped}, from {path}")
 
                 if multiple:

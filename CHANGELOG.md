@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-09-28
+
+### Changed
+
+- `--input` now also accepts a directory on its own, without requiring
+  `--recursive`: every supported file directly under it (not its
+  subdirectories) is split. `--recursive` now means "also descend into
+  subdirectories" rather than "treat --input as a directory", so it no
+  longer requires a change in what `--input` itself accepts, just how
+  much of it gets scanned. `recursive_split_directory` was renamed
+  `split_directory` and takes a `recursive` bool (backed by new
+  `find_directory_inputs`, which lists a directory's top level via
+  `os.listdir` or its full tree via `os.walk`). Verified both modes
+  against a two-level test directory: without `--recursive`, only the
+  top-level file split; with it, the subdirectory's file split too, into
+  its own subdirectory of `--output` mirroring its relative path.
+
+## [0.2.3] - 2026-09-28
+
+### Added
+
+- `--recursive` flag: treats `--input` as a directory and walks it for
+  every file matching a known extension
+  (`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.xml`/`.zip`), splitting each one
+  via the same dispatch a single `--input` file already goes through (new
+  shared `split_one_input`, factored out of that existing per-file loop).
+  Each file's output goes into a subdirectory mirroring its path relative
+  to the scanned root (sanitized per path component, the same way a zip
+  bundle's per-file subdirectories already are), so same-named files in
+  different subdirectories never collide. A file that's itself a zip
+  bundle is expanded in place, same as a top-level `--input` zip. Unlike
+  a single `--input`/zip run, a per-file failure here is reported and
+  skipped (with a final failed-file count) rather than aborting the whole
+  scan, since a directory walk is far more likely than a curated zip to
+  sweep up an unrelated file that only coincidentally matches a known
+  extension. Verified against a mixed real-world tree (nested `.vsdx`,
+  `.vsx`, and a zip-wrapped `.vssx`, plus a duplicate filename in two
+  different subdirectories and two non-matching files): all real files
+  split correctly with no collisions, both junk files skipped cleanly.
+
+### Fixed
+
+- `is_vssx_file`/`is_vsdx_file` (modern OOXML stencil/drawing detection)
+  used to tell the two apart purely by which of
+  `visio/masters/masters.xml` / `visio/pages/pages.xml` was present in the
+  package. Found via real-world `--recursive` testing: a real `.vssx`
+  stencil (`Lenovo-ThinkServer.vssx`) carries both parts (a stencil's own
+  helper preview page, alongside its masters), so it was misdetected as a
+  drawing and silently routed through `vsd2raw`/`vsd2xhtml` instead of
+  `vss2raw`/`vss2xhtml`, extracting one fake "page" instead of its 38 real
+  master shapes, with no error to indicate anything had gone wrong. Now
+  told apart by extension instead (`.vssx`/`.vssm` vs. `.vsdx`/`.vsdm`),
+  the same way the legacy `.vss`/`.vsd` pair already was.
+
 ## [0.2.2] - 2026-09-28
 
 ### Added
