@@ -4,7 +4,7 @@
 
 Diagram Extractor for Visio with local and ONline capability (via draw.io)
 
-Version: 0.2.4 (see [CHANGELOG.md](CHANGELOG.md))
+Version: 0.2.5 (see [CHANGELOG.md](CHANGELOG.md))
 
 Works with Microsoft Visio stencil and drawing files two ways:
 
@@ -14,13 +14,13 @@ Works with Microsoft Visio stencil and drawing files two ways:
   steps you'd do yourself: open the site, upload the `.vss` file, check
   "I confirm this file contains no sensitive or personal information,"
   click **Convert**, and save the resulting library file locally. (The
-  site itself only accepts `.vss`, not `.vssx`, `.vsd`, `.vsdx`, or `.vsx`,
-  so this path is `.vss`-only.)
+  site itself only accepts `.vss`, not `.vssx`, `.vsd`, `.vsdx`, `.vsx`, or
+  `.vstx`, so this path is `.vss`-only.)
 - **Locally**, entirely offline: parses a **classic `.vss` binary, modern
-  `.vssx`, or legacy XML `.vsx` stencil, or a classic `.vsd` or modern
-  `.vsdx` drawing** file directly with `libvisio` and extracts each
-  individual shape or page as its own file (SVG or JPEG), with no browser
-  or upload involved. See
+  `.vssx`, or legacy XML `.vsx` stencil, or a classic `.vsd`, modern
+  `.vsdx`, or modern `.vstx` drawing/template** file directly with
+  `libvisio` and extracts each individual shape or page as its own file
+  (SVG or JPEG), with no browser or upload involved. See
   [Splitting a raw stencil or drawing file directly](#splitting-a-raw-stencil-or-drawing-file-directly-offline-no-browser)
   below.
 
@@ -36,12 +36,15 @@ individual per-shape files; see `--split` below.
 | `.vsx` | Legacy XML stencil | Older, plain-XML Visio stencil format (from Visio's "Save As XML" option), predating both `.vss` and `.vssx`. `--input` only. |
 | `.vsd` | Classic drawing | Legacy (OLE2 binary) Visio drawing: one or more drawn pages, as opposed to a shape library. `--input` only; splits into one file per page. |
 | `.vsdx` | Modern drawing | Modern (OOXML/zip) Visio drawing. `--input` only; splits into one file per page. |
+| `.vstx` | Modern template | Modern (OOXML/zip) Visio template: page-based like a drawing (it's what you open to start a new one), rather than master-based like a stencil. `--input` only; splits into one file per page. |
 | `.xml` (`<mxlibrary>`) | Converted/exported library | A draw.io/diagrams.net shape library, as produced by `--upload` or downloaded from vss.draw.io directly. `--input` only; splits into one file per shape. |
 | `.zip` | Bundle | An archive bundling one or more of the file types above. Accepted by both `--upload` and `--input`; each file found inside is extracted and processed independently. |
 
 `.vss`/`.vsd` share the same OLE2 container and are told apart only by
-extension; `.vssx`/`.vsdx` share the same OOXML/zip container and are told
-apart by content. See
+extension; `.vssx`/`.vsdx`/`.vstx` share the same OOXML/zip container and
+are told apart the same way, by extension, since either part a stencil or
+drawing carries internally (its own masters, or a helper/preview page)
+can appear in either format. See
 [Splitting a raw stencil or drawing file directly](#splitting-a-raw-stencil-or-drawing-file-directly-offline-no-browser)
 for the offline formats, and [Checking your setup](#checking-your-setup)
 for which external tools each one needs.
@@ -51,8 +54,8 @@ for which external tools each one needs.
 - Python 3
 - [Selenium](https://pypi.org/project/selenium/) 4.6+ (auto-downloads a matching chromedriver)
 - Google Chrome or Chromium installed
-- Optional, for splitting a raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx` file
-  directly (see below): [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)'s
+- Optional, for splitting a raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx`
+  file directly (see below): [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)'s
   `vss2raw`/`vss2xhtml` and `vsd2raw`/`vsd2xhtml` command-line tools on
   `PATH` (`brew install libvisio` on macOS)
 - Optional, to recover shapes whose artwork is an embedded Windows EMF/WMF
@@ -81,7 +84,7 @@ python3 devon.py --upload Stencil.vss --download Stencil.xml
 |--------------|---------------------------------------|------------------------------------------------------------|
 | `--upload`   | *(required unless `--input` is used)* | Path to the `.vss` file to upload, or a `.zip` containing one or more |
 | `--download` | `<upload basename>.xml` in the cwd    | Where to save the converted library file (a directory instead, if `--upload` is a `.zip` with multiple `.vss` files) |
-| `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx`/`.vsx` stencil or `.vsd`/`.vsdx` drawing file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`); or a directory, to split every supported file directly under it |
+| `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx`/`.vsx` stencil or `.vsd`/`.vsdx`/`.vstx` drawing/template file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`); or a directory, to split every supported file directly under it |
 | `--split`    | off                                    | Split the library/stencil file into individual per-shape files |
 | `--recursive` | off                                    | With `--input` as a directory, also descend into its subdirectories (by default, only the files directly under it are split) |
 | `--output`   | basename of `--input`/`--upload`, minus its extension | Directory to write per-shape files into (used with `--split`) |
@@ -113,7 +116,7 @@ python3 devon.py --checkconfig
 
 It exits non-zero only if `selenium` or a Chrome/Chromium install is
 missing (both unconditionally required); the rest are only needed for
-specific flags (`--to jpg`, or `--input` on a raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`
+specific flags (`--to jpg`, or `--input` on a raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx`
 file) and are reported without affecting the exit code.
 
 This same check also runs automatically, silently, before any other flag
@@ -144,7 +147,7 @@ reported so you can install it manually (see Requirements above).
 
 Add `--verbose` to any run to get a running commentary on stderr of what's
 happening at each stage: which file is being read, whether it's a zip or a
-raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`<mxlibrary>` file, each shape or page as it's
+raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx`/`<mxlibrary>` file, each shape or page as it's
 written, skipped, or rasterized, and, for the online path, each step of
 driving vss.draw.io (loading the page, uploading, confirming the
 checkbox, clicking Convert, waiting for the download). Normal stdout
@@ -214,10 +217,11 @@ python3 devon.py --input Stencil.xml --split --output shapes/
 ```
 
 `--input` also accepts a `.zip` archive: every
-`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx` file found inside is extracted and
-split (or, if it has none, every `.xml` file instead). A `.vssx`/`.vsdx`
-file is itself a zip package, but is detected and treated as a single
-stencil or drawing rather than being opened as a bundle.
+`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx` file found inside is
+extracted and split (or, if it has none, every `.xml` file instead). A
+`.vssx`/`.vsdx`/`.vstx` file is itself a zip package, but is detected and
+treated as a single stencil/drawing/template rather than being opened as
+a bundle.
 
 A zip with a single stencil behaves just like passing that file directly:
 
@@ -279,9 +283,10 @@ python3 devon.py --input Stencil.xml --split --output shapes/ --to png
 
 ### Splitting a raw stencil or drawing file directly (offline, no browser)
 
-`--input` also accepts a raw `.vss`/`.vssx`/`.vsx` stencil or `.vsd`/`.vsdx`
-drawing file. This uses [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)
-to parse the file natively and render each item's real artwork, entirely
+`--input` also accepts a raw `.vss`/`.vssx`/`.vsx` stencil or
+`.vsd`/`.vsdx`/`.vstx` drawing/template file. This uses
+[libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio) to
+parse the file natively and render each item's real artwork, entirely
 offline: no browser, no vss.draw.io upload:
 
 ```
@@ -290,21 +295,25 @@ python3 devon.py --input Stencil.vssx --split --output shapes/ --to svg
 python3 devon.py --input Stencil.vsx --split --output shapes/ --to svg
 python3 devon.py --input Drawing.vsd --split --output pages/ --to svg
 python3 devon.py --input Drawing.vsdx --split --output pages/ --to svg
+python3 devon.py --input Template.vstx --split --output pages/ --to svg
 ```
 
 A `.vss`/`.vssx`/`.vsx` stencil splits into one file per **master shape**
 (via `vss2raw`/`vss2xhtml`, which handle all three formats transparently);
-a `.vsd`/`.vsdx` drawing splits into one file per **page** instead (via
-`vsd2raw`/`vsd2xhtml`, which likewise handle both formats transparently).
-A `.vsd`/`.vsdx` file is a document with drawn pages, not a shape library,
-so "shapes" there means whole pages of the drawing. `.vsx` is the legacy
-Visio XML stencil format (plain XML, from Visio's old "Save As XML"
-option), distinct from both the binary `.vss` and the OOXML `.vssx`.
+a `.vsd`/`.vsdx` drawing or `.vstx` template splits into one file per
+**page** instead (via `vsd2raw`/`vsd2xhtml`, which likewise handle all
+three formats transparently). A `.vsd`/`.vsdx`/`.vstx` file is a document
+with drawn pages, not a shape library, so "shapes" there means whole
+pages of the drawing/template. `.vsx` is the legacy Visio XML stencil
+format (plain XML, from Visio's old "Save As XML" option), distinct from
+both the binary `.vss` and the OOXML `.vssx`. `.vstx` is a template
+rather than a drawing (it's what you open to start a new document), but
+splits the same page-based way since that's what it actually contains.
 
 (`--to xml` isn't supported for any of these inputs: there's no per-shape
 library format to reuse. Use `--to svg`, `--to jpg`, or `--to png` instead.)
 
-`.vssx`/`.vsd`/`.vsdx`/`.vsx` are only supported by this local path, not
+`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx` are only supported by this local path, not
 `--upload`: vss.draw.io's own upload check rejects anything whose filename
 doesn't end in `.vss`.
 
@@ -318,8 +327,8 @@ can recover every item, entirely offline.
 ### Splitting a whole directory
 
 `--input` also accepts a directory: every
-`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.xml`/`.zip` file found directly
-under it (not its subdirectories) is split the same way passing it
+`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx`/`.xml`/`.zip` file found
+directly under it (not its subdirectories) is split the same way passing it
 directly to `--input` would be:
 
 ```

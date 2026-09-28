@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-09-28
+
+### Added
+
+- `--input` now also accepts a modern `.vstx` (OOXML) Visio template: an
+  OOXML Visio package (content type
+  `application/vnd.ms-visio.template.main+xml`) whose own extension marks
+  it as a template, distinct from a stencil (`.vssx`) or drawing
+  (`.vsdx`). Split via `vsd2raw`/`vsd2xhtml`, the same tools already used
+  for `.vsd`/`.vsdx`, since a template is page-based like a drawing (it's
+  what you open to start a new one) rather than master-based like a
+  stencil. `.vstx` files are also recognized inside zip bundles and a
+  scanned `--input` directory, and `--upload` now rejects a `.vstx` file
+  immediately with a clear message (vss.draw.io only accepts classic
+  `.vss`), matching the existing handling for the other raw formats.
+  Verified against a real file (`PHS_sampler_U_v20210309.vstx`): its one
+  page extracted with correctly rendered text content.
+
 ## [0.2.4] - 2026-09-28
 
 ### Changed
