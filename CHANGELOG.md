@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-09-28
+
+### Added
+
+- `--input` now also accepts a legacy Visio XML-format stencil (`.vsx`):
+  plain XML with a `<VisioDocument>` root, predating both the OLE2 binary
+  (`.vss`/`.vsd`) and OOXML zip (`.vssx`/`.vsdx`) containers. Split via
+  `vss2raw`/`vss2xhtml`, the same tools already used for `.vss`/`.vssx`,
+  which parse the XML format transparently with no changes needed on
+  their side. `.vsx` files are also recognized inside zip bundles passed
+  to `--input`/`--upload`, and `--upload` now rejects a `.vsx` file
+  immediately with a clear message (vss.draw.io only accepts classic
+  `.vss`), matching the existing `.vssx`/`.vsd`/`.vsdx` handling. Verified
+  against a real file (`Atmel_AT89S_v2014.vsx`): all 14 masters extracted
+  with real names and correctly rendered (vector, not raster) artwork.
+
+## [0.2.1] - 2026-09-27
+
+### Changed
+
+- `--output` is no longer required with `--split`. When omitted, it
+  defaults to the basename of `--input`/`--upload` minus its extension
+  (equivalent to `basename -s .<ext> <file>`), created in the current
+  directory, e.g. `--input Mikrotik_CCR2004_16GS_2S+PC_v2025.vsdx --split`
+  writes into a `Mikrotik_CCR2004_16GS_2S+PC_v2025/` directory. Explicit
+  `--output` still works exactly as before.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added
