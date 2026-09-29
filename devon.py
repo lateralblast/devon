@@ -24,7 +24,7 @@ automatically. The local path additionally needs libvisio's vss2raw/
 vss2xhtml/vsd2raw/vsd2xhtml (and optionally emf2svg-conv, rsvg-convert) on
 PATH; see README.md.
 """
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 __description__ = "Diagram Extractor for Visio with local and ONline capability (via draw.io)"
 
 import argparse
