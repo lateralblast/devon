@@ -2,193 +2,143 @@
 
 # devon.py
 
-Diagram Extractor for Visio with local and ONline capability (via draw.io)
+Diagram Extractor for Visio with local and online capability (via draw.io)
 
 Version: 0.2.6 (see [CHANGELOG.md](CHANGELOG.md))
 
-Works with Microsoft Visio stencil and drawing files two ways:
+`devon.py` pulls shapes and pages out of Microsoft Visio stencil, drawing and
+template files. It has two modes:
 
-- **Online**, via [vss.draw.io](https://vss.draw.io): automates the browser
-  to convert a **classic `.vss`** stencil into a draw.io/diagrams.net
-  library, without you having to drive it by hand. It scripts the same
-  steps you'd do yourself: open the site, upload the `.vss` file, check
-  "I confirm this file contains no sensitive or personal information,"
-  click **Convert**, and save the resulting library file locally. (The
-  site itself only accepts `.vss`, not `.vssx`, `.vsd`, `.vsdx`, `.vsx`, or
-  `.vstx`, so this path is `.vss`-only.)
-- **Locally**, entirely offline: parses a **classic `.vss` binary, modern
-  `.vssx`, or legacy XML `.vsx` stencil, or a classic `.vsd`, modern
-  `.vsdx`, or modern `.vstx` drawing/template** file directly with
-  `libvisio` and extracts each individual shape or page as its own file
-  (SVG or JPEG), with no browser or upload involved. See
-  [Splitting a raw stencil or drawing file directly](#splitting-a-raw-stencil-or-drawing-file-directly-offline-no-browser)
-  below.
+- **Online** ([vss.draw.io](https://vss.draw.io)): drives Chrome through the
+  site's own steps (open the page, upload the file, tick the "no sensitive or
+  personal information" box, click **Convert**) and saves the resulting
+  draw.io/diagrams.net library. The site only takes classic `.vss`, so this
+  mode is `.vss`-only.
+- **Local** (offline): parses the file directly with `libvisio` and writes each
+  shape or page as its own SVG, JPEG or PNG. No browser, no upload. See
+  [Splitting a raw stencil or drawing file directly](#splitting-a-raw-stencil-or-drawing-file-directly-offline-no-browser).
 
-Either path can also split a converted or extracted library into
-individual per-shape files; see `--split` below.
+Either mode can split the result into one file per shape with `--split`.
+
+## Quick start
+
+```
+pip install -r requirements.txt
+python3 devon.py --upload Stencil.vss --download Stencil.xml
+python3 devon.py --input Stencil.vssx --split --output shapes/ --to svg
+```
 
 ## Supported file types
 
-| Extension | File type | Description |
-|-----------|-----------|--------------|
-| `.vss` | Classic stencil | Legacy (OLE2 binary) Visio stencil: a library of master shapes. The only format `--upload` (online, via vss.draw.io) accepts; also supported by `--input` (offline, via libvisio). |
-| `.vssx` | Modern stencil | Modern (OOXML/zip) Visio stencil. `--input` only: vss.draw.io's online path accepts classic `.vss` alone. |
-| `.vsx` | Legacy XML stencil | Older, plain-XML Visio stencil format (from Visio's "Save As XML" option), predating both `.vss` and `.vssx`. `--input` only. |
-| `.vsd` | Classic drawing | Legacy (OLE2 binary) Visio drawing: one or more drawn pages, as opposed to a shape library. `--input` only; splits into one file per page. |
-| `.vsdx` | Modern drawing | Modern (OOXML/zip) Visio drawing. `--input` only; splits into one file per page. |
-| `.vstx` | Modern template | Modern (OOXML/zip) Visio template: page-based like a drawing (it's what you open to start a new one), rather than master-based like a stencil. `--input` only; splits into one file per page. |
-| `.xml` (`<mxlibrary>`) | Converted/exported library | A draw.io/diagrams.net shape library, as produced by `--upload` or downloaded from vss.draw.io directly. `--input` only; splits into one file per shape. |
-| `.zip` | Bundle | An archive bundling one or more of the file types above. Accepted by both `--upload` and `--input`; each file found inside is extracted and processed independently. |
+| Extension | Type | Notes |
+|-----------|------|-------|
+| `.vss` | Classic stencil | OLE2 binary shape library. The only format `--upload` accepts; `--input` also reads it. |
+| `.vssx` | Modern stencil | OOXML/zip shape library. `--input` only. |
+| `.vsx` | Legacy XML stencil | Plain XML from Visio's old "Save As XML". `--input` only. |
+| `.vsd` | Classic drawing | OLE2 binary, one or more pages. `--input` only; one file per page. |
+| `.vsdx` | Modern drawing | OOXML/zip, one or more pages. `--input` only; one file per page. |
+| `.vstx` | Modern template | OOXML/zip. Page-based like a drawing, not master-based like a stencil. `--input` only; one file per page. |
+| `.xml` (`<mxlibrary>`) | draw.io library | Produced by `--upload` or downloaded from vss.draw.io. `--input` only; one file per shape. |
+| `.zip` | Bundle | Any mix of the above. Accepted by `--upload` and `--input`; each file inside is processed on its own. |
 
-`.vss`/`.vsd` share the same OLE2 container and are told apart only by
-extension; `.vssx`/`.vsdx`/`.vstx` share the same OOXML/zip container and
-are told apart the same way, by extension, since either part a stencil or
-drawing carries internally (its own masters, or a helper/preview page)
-can appear in either format. See
-[Splitting a raw stencil or drawing file directly](#splitting-a-raw-stencil-or-drawing-file-directly-offline-no-browser)
-for the offline formats, and [Checking your setup](#checking-your-setup)
-for which external tools each one needs.
-
-## Help Support Development
-
-Fund me here: https://ko-fi.com/richardatlateralblast
+`.vss` and `.vsd` share the OLE2 container, and `.vssx`, `.vsdx` and `.vstx`
+share the OOXML/zip container, so the extension is what tells them apart. Their
+contents can't: a stencil can carry a helper page, and a drawing can carry
+local copies of its masters.
 
 ## Requirements
 
 - Python 3
-- [Selenium](https://pypi.org/project/selenium/) 4.6+ (auto-downloads a matching chromedriver)
-- Google Chrome or Chromium installed
-- Optional, for splitting a raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx`
-  file directly (see below): [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)'s
-  `vss2raw`/`vss2xhtml` and `vsd2raw`/`vsd2xhtml` command-line tools on
-  `PATH` (`brew install libvisio` on macOS)
-- Optional, to recover shapes whose artwork is an embedded Windows EMF/WMF
-  metafile when splitting a raw file: `emf2svg-conv` from
-  [libemf2svg](https://github.com/kakwa/libemf2svg) on `PATH`
-  (`brew install libemf2svg` on macOS)
-- Optional, for `--to jpg`/`--to png`: `rsvg-convert` (from
-  [librsvg](https://wiki.gnome.org/Projects/LibRsvg)) on `PATH`
-  (`brew install librsvg` on macOS); for `--to jpg` specifically,
-  [Pillow](https://pypi.org/project/Pillow/) handles the PNG -> JPEG step
-  and is installed automatically if missing
+- [Selenium](https://pypi.org/project/selenium/) 4.6+ (downloads a matching chromedriver itself)
+- Google Chrome or Chromium
+- Optional, for splitting raw Visio files:
+  [libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio)'s
+  `vss2raw`/`vss2xhtml` and `vsd2raw`/`vsd2xhtml` on `PATH`
+  (`brew install libvisio` on macOS)
+- Optional, to recover shapes whose artwork is an embedded EMF/WMF metafile:
+  `emf2svg-conv` from [libemf2svg](https://github.com/kakwa/libemf2svg) on
+  `PATH` (`brew install libemf2svg`)
+- Optional, for `--to jpg` and `--to png`: `rsvg-convert` from
+  [librsvg](https://wiki.gnome.org/Projects/LibRsvg) on `PATH`
+  (`brew install librsvg`). `--to jpg` also needs
+  [Pillow](https://pypi.org/project/Pillow/), which is installed automatically
+  if missing.
 
-```
-pip install -r requirements.txt
-```
+## Options
 
-## Usage
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--upload` | required unless `--input` is used | `.vss` file to convert online, or a `.zip` containing one or more |
+| `--download` | `<upload basename>.xml` in the cwd | Where to save the converted library. A directory if `--upload` is a zip with several `.vss` files |
+| `--input` | none | An `<mxlibrary>` file, a raw stencil/drawing/template file, a `.zip` of these, or a directory. A directory splits every supported file directly under it |
+| `--split` | off | Split the library or document into per-shape (or per-page) files |
+| `--inspect` | off | Report each `--input` file's detected type and contents; write nothing |
+| `--recursive` | off | With a directory `--input`, also descend into subdirectories |
+| `--output` | basename of `--input`/`--upload`, minus extension | Directory for the per-shape files. `--input Stencil.vsdx` defaults to `Stencil/` |
+| `--to` | `xml` | Output for `--split`: `xml` (single-shape libraries), `svg`, `jpg` (white background) or `png` (transparent) |
+| `--headless` | off | Run Chrome without a window |
+| `--timeout` | `90` | Seconds to wait for conversion and download |
+| `--checkconfig` | off | Report installed and missing dependencies, then exit |
+| `--install` | off | With `--checkconfig`, try to install what's missing |
+| `--verbose` | off | Log each stage to stderr |
 
-```
-python3 devon.py --upload Stencil.vss --download Stencil.xml
-```
+Constraints:
 
-### Options
+- `--upload` and `--input` are mutually exclusive, and one is required.
+- `--input` needs `--split` or `--inspect`, and the two can't be combined.
+- `--to` only applies with `--split`. `--to xml` isn't available for raw
+  Visio files, which have no per-shape library format; use `svg`, `jpg` or `png`.
+- `--install` requires `--checkconfig`.
 
-| Flag         | Default                              | Description                                              |
-|--------------|---------------------------------------|------------------------------------------------------------|
-| `--upload`   | *(required unless `--input` is used)* | Path to the `.vss` file to upload, or a `.zip` containing one or more |
-| `--download` | `<upload basename>.xml` in the cwd    | Where to save the converted library file (a directory instead, if `--upload` is a `.zip` with multiple `.vss` files) |
-| `--input`    | none                                   | Path to an existing `<mxlibrary>` file, a raw `.vss`/`.vssx`/`.vsx` stencil or `.vsd`/`.vsdx`/`.vstx` drawing/template file, or a `.zip` containing one or more, to split instead of converting one (use with `--split`); or a directory, to split every supported file directly under it |
-| `--split`    | off                                    | Split the library/stencil file into individual per-shape files |
-| `--inspect`  | off                                    | Examine `--input` and report each file's detected type and contents, without splitting anything |
-| `--recursive` | off                                    | With `--input` as a directory, also descend into its subdirectories (by default, only the files directly under it are split/inspected) |
-| `--output`   | basename of `--input`/`--upload`, minus its extension | Directory to write per-shape files into (used with `--split`) |
-| `--to`       | `xml`                                  | Output format for `--split`: `xml` (single-shape library files), `svg` (each shape's embedded artwork), `jpg` (rasterized JPEG), or `png` (rasterized PNG) |
-| `--headless` | off                                    | Run Chrome without a visible window                        |
-| `--timeout`  | `90`                                   | Seconds to wait for conversion/download                    |
-| `--checkconfig` | off                                 | Check that required and optional dependencies are installed, then exit |
-| `--install`  | off                                    | With `--checkconfig`, also attempt to install missing dependencies (Python packages via pip, external tools via the system package manager) |
-| `--verbose`  | off                                    | Print a running commentary of what's happening at each stage, to stderr |
-
-`--upload` and `--input` are mutually exclusive; exactly one is required.
-`--split` or `--inspect` is required when using `--input`, and the two
-can't be combined. `--output` defaults to the basename of
-`--input`/`--upload` minus its extension (e.g. `--input Stencil.vsdx`
-defaults to a `Stencil/` directory) when not given.
-`--to` only applies alongside `--split`.
-`--install` requires `--checkconfig`.
-
-### Checking your setup
-
-`--checkconfig` checks every Python-package and command-line dependency
-this script can use: `selenium`, Chrome/Chromium, `Pillow`, `rsvg-convert`,
-and libvisio's `vss2raw`/`vss2xhtml`/`vsd2raw`/`vsd2xhtml` and
-`emf2svg-conv`. It prints a report of what's installed and what's
-missing, along with an install hint for anything missing:
+## Checking your setup
 
 ```
 python3 devon.py --checkconfig
 ```
 
-It exits non-zero only if `selenium` or a Chrome/Chromium install is
-missing (both unconditionally required); the rest are only needed for
-specific flags (`--to jpg`, or `--input` on a raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx`
-file) and are reported without affecting the exit code.
+The report covers `selenium`, Chrome/Chromium, `Pillow`, `rsvg-convert`,
+libvisio's four tools and `emf2svg-conv`, with an install hint for each
+missing item. It exits non-zero only when `selenium` or Chrome/Chromium is
+missing. The rest matter only for particular flags (`--to jpg`, or `--input` on
+a raw Visio file) and don't affect the exit code.
 
-This same check also runs automatically, silently, before any other flag
-(`--upload`/`--input`/etc.) does anything. If `selenium` or Chrome/Chromium
-turns out to be missing, the same report is printed and the script exits
-before touching the requested file.
+The same check runs silently before every other invocation. If `selenium` or
+Chrome/Chromium is missing, the report prints and the script exits before it
+touches your file.
 
-Add `--install` to also attempt installing whichever dependencies are
-missing:
-
-- Python packages (`selenium`, `Pillow`) via `pip install`.
-- The external (non-Python) tools: `rsvg-convert` (librsvg), libvisio's
-  `vss2raw`/`vss2xhtml`/`vsd2raw`/`vsd2xhtml`, and `emf2svg-conv`
-  (libemf2svg), via whichever supported package manager (`brew`,
-  `apt-get`, `dnf`, or `pacman`) is found on `PATH`.
+Add `--install` to install what's missing:
 
 ```
 python3 devon.py --checkconfig --install
 ```
 
-This runs real installs against your system (via `pip`, and via `sudo` on
-Linux for the package-manager installs). It doesn't touch Chrome/Chromium,
-which has to be installed manually. If no supported package manager is
-found, or a tool has no known package for your package manager, it's
-reported so you can install it manually (see Requirements above).
+Python packages (`selenium`, `Pillow`) go in through `pip`. The external tools
+(`rsvg-convert`, the libvisio tools, `emf2svg-conv`) go in through whichever of
+`brew`, `apt-get`, `dnf` or `pacman` is on `PATH`, using `sudo` on Linux. This
+changes your system. It never installs Chrome/Chromium; do that yourself. If no
+package manager is found, or one has no package for a tool, the report says so.
 
-### Verbose output
-
-Add `--verbose` to any run to get a running commentary on stderr of what's
-happening at each stage: which file is being read, whether it's a zip or a
-raw `.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx`/`<mxlibrary>` file, each shape or page as it's
-written, skipped, or rasterized, and, for the online path, each step of
-driving vss.draw.io (loading the page, uploading, confirming the
-checkbox, clicking Convert, waiting for the download). Normal stdout
-output (the final summary lines) is unchanged; verbose lines are prefixed
-`[verbose]` and go to stderr, so piping stdout elsewhere still gets just
-the summary.
-
-```
-python3 devon.py --input Stencil.vssx --split --output shapes/ --to svg --verbose
-```
-
-### Example
+## Online conversion
 
 ```
 python3 devon.py --upload Stencil.vss --download Stencil.xml --headless
 ```
 
-On success, prints:
+On success it prints:
 
 ```
 Converted library saved to: /path/to/Stencil.xml
 ```
 
-If the site rejects the file (e.g. unsupported format), the script reads the
-page's own error banner and raises `RuntimeError: Conversion failed: <message>`.
-If nothing finishes within `--timeout` seconds, it raises a `TimeoutError`.
+If the site rejects the file, the script reads the page's error banner and
+raises `RuntimeError: Conversion failed: <message>`. If nothing finishes within
+`--timeout` seconds, it raises `TimeoutError`.
 
-### Converting multiple stencils from a zip
+### Several stencils from a zip
 
-`--upload` also accepts a `.zip` archive containing one or more `.vss`
-files. A zip with a single stencil behaves just like passing that file
-directly. A zip with multiple stencils converts each one in turn (through
-its own fresh page load, so state never leaks between conversions) and
-treats `--download` as a directory, writing one converted file per stencil
-named after it:
+`--upload` accepts a `.zip` of `.vss` files. Each stencil gets its own fresh
+page load, so state never leaks between conversions. With more than one,
+`--download` is treated as a directory:
 
 ```
 python3 devon.py --upload Vendors.zip --download converted/ --headless
@@ -199,45 +149,32 @@ Converted library saved to: converted/VendorA.xml
 Converted library saved to: converted/VendorB.xml
 ```
 
-`--split --output shapes/` works the same way here as with `--input` (see
-below): with multiple stencils, each one's shapes land in their own
-subdirectory under `shapes/`.
+`--split --output shapes/` works the same as with `--input`; each stencil's
+shapes land in a subdirectory of `shapes/`.
 
-### Splitting a library into individual shape files
+## Splitting
 
-A converted library file (like `Stencil.xml`) is a draw.io `<mxlibrary>` file
-containing one entry per shape. `--split` breaks it apart into one
-single-shape library file per shape, named after the shape's title, so each
-can be imported or shared individually.
+### A converted library
 
-Split right after converting:
+A converted library is a draw.io `<mxlibrary>` file with one entry per shape.
+`--split` writes one single-shape library per shape, named after its title, so
+each can be imported or shared alone.
 
 ```
+# right after converting
 python3 devon.py --upload Stencil.vss --download Stencil.xml --split --output shapes/
-```
 
-Or split an already-downloaded library file, with no browser/upload involved:
-
-```
+# from a library you already have, no browser
 python3 devon.py --input Stencil.xml --split --output shapes/
 ```
 
-`--input` also accepts a `.zip` archive: every
-`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx` file found inside is
-extracted and split (or, if it has none, every `.xml` file instead). A
-`.vssx`/`.vsdx`/`.vstx` file is itself a zip package, but is detected and
-treated as a single stencil/drawing/template rather than being opened as
-a bundle.
+`--input` also takes a `.zip`. Every `.vss`, `.vssx`, `.vsd`, `.vsdx`, `.vsx`
+and `.vstx` inside is split; if there are none, every `.xml` is. A
+`.vssx`/`.vsdx`/`.vstx` is itself a zip, but it's detected and treated as one
+stencil, drawing or template, not unpacked as a bundle.
 
-A zip with a single stencil behaves just like passing that file directly:
-
-```
-python3 devon.py --input Stencil.zip --split --output shapes/
-```
-
-A zip with multiple stencils splits each one into its own subdirectory
-under `--output`, named after the source file, so shapes from different
-stencils never collide:
+A zip holding one stencil behaves like passing that file. A zip holding several
+splits each into a subdirectory of `--output` named after the source file:
 
 ```
 python3 devon.py --input Vendors.zip --split --output shapes/
@@ -249,51 +186,40 @@ Split 61 shape(s) from 'VendorB.vss' into: shapes/VendorB
 Split 122 shape(s) total from 2 files into: shapes/
 ```
 
-A single-stencil zip (or a plain `.vss`/`.xml` file) prints:
+A single stencil, zipped or not, prints:
 
 ```
 Split 61 shape(s) into: /path/to/shapes
 ```
 
-### Extracting shapes as SVG
+### Output formats
 
-Pass `--to svg` to extract each shape's embedded artwork as a standalone
-`.svg` file instead:
+`--to svg` writes each shape's embedded artwork as a standalone `.svg`:
 
 ```
 python3 devon.py --input Stencil.xml --split --output shapes/ --to svg
 ```
 
-Some Visio masters convert with no visible artwork at all (an empty
-placeholder). Those are skipped, and the count is reported:
+Some masters convert to an empty placeholder with no visible artwork. These are
+skipped and counted:
 
 ```
 Skipped 16 shape(s) with no visible artwork
 Split 45 shape(s) into: /path/to/shapes
 ```
 
-Pass `--to jpg` instead to get a rasterized, white-background JPEG per shape
-(via `rsvg-convert` + Pillow) rather than the raw SVG:
+`--to jpg` rasterizes each shape onto a white background (`rsvg-convert` plus
+Pillow). `--to png` uses `rsvg-convert` alone and keeps transparency:
 
 ```
 python3 devon.py --input Stencil.xml --split --output shapes/ --to jpg
-```
-
-Pass `--to png` for a rasterized PNG per shape instead (via `rsvg-convert`
-alone, no Pillow needed): transparency is preserved rather than flattened
-onto a white background, unlike `--to jpg`:
-
-```
 python3 devon.py --input Stencil.xml --split --output shapes/ --to png
 ```
 
-### Splitting a raw stencil or drawing file directly (offline, no browser)
+### A raw stencil or drawing file (offline, no browser)
 
-`--input` also accepts a raw `.vss`/`.vssx`/`.vsx` stencil or
-`.vsd`/`.vsdx`/`.vstx` drawing/template file. This uses
-[libvisio](https://wiki.documentfoundation.org/DLP/Libraries/libvisio) to
-parse the file natively and render each item's real artwork, entirely
-offline: no browser, no vss.draw.io upload:
+`--input` accepts any raw Visio file. `libvisio` parses it natively and renders
+each item's real artwork:
 
 ```
 python3 devon.py --input Stencil.vss --split --output shapes/ --to svg
@@ -304,61 +230,45 @@ python3 devon.py --input Drawing.vsdx --split --output pages/ --to svg
 python3 devon.py --input Template.vstx --split --output pages/ --to svg
 ```
 
-A `.vss`/`.vssx`/`.vsx` stencil splits into one file per **master shape**
-(via `vss2raw`/`vss2xhtml`, which handle all three formats transparently);
-a `.vsd`/`.vsdx` drawing or `.vstx` template splits into one file per
-**page** instead (via `vsd2raw`/`vsd2xhtml`, which likewise handle all
-three formats transparently). A `.vsd`/`.vsdx`/`.vstx` file is a document
-with drawn pages, not a shape library, so "shapes" there means whole
-pages of the drawing/template. `.vsx` is the legacy Visio XML stencil
-format (plain XML, from Visio's old "Save As XML" option), distinct from
-both the binary `.vss` and the OOXML `.vssx`. `.vstx` is a template
-rather than a drawing (it's what you open to start a new document), but
-splits the same page-based way since that's what it actually contains.
+Stencils (`.vss`, `.vssx`, `.vsx`) split into one file per **master shape**,
+through `vss2raw` and `vss2xhtml`. Drawings and templates (`.vsd`, `.vsdx`,
+`.vstx`) split into one file per **page**, through `vsd2raw` and `vsd2xhtml`.
+Each tool pair reads all three of its formats. A template is what you open to
+start a new drawing, but it holds pages, so it splits like one.
 
-(`--to xml` isn't supported for any of these inputs: there's no per-shape
-library format to reuse. Use `--to svg`, `--to jpg`, or `--to png` instead.)
+Only this local path reads `.vssx`, `.vsd`, `.vsdx`, `.vsx` and `.vstx`.
+vss.draw.io rejects any upload whose filename doesn't end in `.vss`.
 
-`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx` are only supported by this local path, not
-`--upload`: vss.draw.io's own upload check rejects anything whose filename
-doesn't end in `.vss`.
+Some masters and pages store their artwork as a Windows EMF/WMF metafile, which
+libvisio can't rasterize and browsers can't display. With `emf2svg-conv` on
+`PATH` these are converted to real SVG and recovered. Without it they're skipped
+and counted, as above, rather than written as broken images.
 
-Some masters/pages store their artwork as a Windows EMF/WMF metafile, which
-libvisio can't rasterize and browsers can't display. If `emf2svg-conv` (from
-libemf2svg) is on `PATH`, those are rendered to real SVG and recovered
-automatically; otherwise they're skipped (reported the same way as above)
-rather than writing a broken image. With `emf2svg-conv` installed this path
-can recover every item, entirely offline.
+### A whole directory
 
-### Splitting a whole directory
-
-`--input` also accepts a directory: every
-`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx`/`.xml`/`.zip` file found
-directly under it (not its subdirectories) is split the same way passing it
-directly to `--input` would be:
+`--input` also accepts a directory. Every `.vss`, `.vssx`, `.vsd`, `.vsdx`,
+`.vsx`, `.vstx`, `.xml` and `.zip` directly under it is split as if you had
+passed it alone:
 
 ```
 python3 devon.py --input stencils/ --split --output shapes/ --to svg
 ```
 
-Add `--recursive` to also descend into subdirectories:
+Add `--recursive` to descend into subdirectories:
 
 ```
 python3 devon.py --input stencils/ --recursive --split --output shapes/ --to svg
 ```
 
-Each file's output goes into a subdirectory mirroring its path relative
-to the scanned directory (e.g. `stencils/vendorA/Widget.vssx` lands in
-`shapes/vendorA/Widget/`), so files with the same name in different
-subdirectories never collide. A `.zip` found during the scan is expanded
-in place, the same way a top-level `--input` zip already is.
+Output mirrors each file's path relative to the scanned directory, so
+`stencils/vendorA/Widget.vssx` lands in `shapes/vendorA/Widget/` and two
+`Widget.vssx` files in different folders don't collide. A `.zip` found during
+the scan is expanded in place.
 
-Unlike a single-file `--input` run, a file that fails here (for example,
-an unrelated `.xml` file that isn't a real `<mxlibrary>`) is reported and
-skipped rather than aborting the whole scan, since scanning a directory
-is far more likely than a deliberately-built zip to sweep up something
-that only coincidentally matches a known extension. The final summary
-reports how many files failed, if any:
+A file that fails is reported and skipped; it doesn't abort the scan. A
+directory is likelier than a hand-built zip to contain something that only
+matches an extension, such as an `.xml` file that isn't a real `<mxlibrary>`.
+The summary counts the failures:
 
 ```
 Skipping vendorA/notes.xml: Not an <mxlibrary>...</mxlibrary> file
@@ -366,10 +276,9 @@ Split 340 shape(s) total from 12 file(s) under: stencils/
 Failed to split 1 file(s); see messages above
 ```
 
-### Inspecting a file without splitting it
+## Inspecting without splitting
 
-Pass `--inspect` instead of `--split` to see what a file is and what it
-contains without writing anything:
+`--inspect` reports what a file is and what it holds, and writes nothing:
 
 ```
 python3 devon.py --input Stencil.vssx --inspect
@@ -383,25 +292,36 @@ Stencil.vssx: modern Visio stencil (.vssx)
     ...
 ```
 
-`--inspect` accepts the same `--input` targets as `--split` does: a raw
-`.vss`/`.vssx`/`.vsd`/`.vsdx`/`.vsx`/`.vstx` file, an `<mxlibrary>` file,
-a `.zip` bundle (each contained file inspected in turn), or a directory
-(add `--recursive` to also descend into subdirectories). For a raw
-stencil/drawing/template it only runs the raw-tool (`vss2raw` or
-`vsd2raw`) to list names, skipping the xhtml-tool, EMF recovery, and
-rasterization entirely, so it's much cheaper than actually splitting.
-`--output` and `--to` don't apply, since nothing is written; a file that
-fails to inspect (e.g. an unrelated `.xml` file, or a corrupt document)
-is reported and the scan continues rather than aborting.
+It takes the same `--input` targets as `--split`: a raw Visio file, an
+`<mxlibrary>` file, a `.zip` (each file inside is inspected) or a directory
+(add `--recursive` to descend). For raw files it runs only `vss2raw` or
+`vsd2raw` to list names, skipping the xhtml tool, EMF recovery and
+rasterization, so it's much cheaper than a split. `--output` and `--to` don't
+apply. A file that fails to inspect is reported and the scan continues.
+
+## Verbose output
+
+`--verbose` logs each stage to stderr with a `[verbose]` prefix: the file being
+read, whether it's a zip, raw file or `<mxlibrary>`, each shape or page written,
+skipped or rasterized, and, online, each step of driving vss.draw.io. The
+summary lines on stdout are unchanged, so piping stdout still gets only those.
+
+```
+python3 devon.py --input Stencil.vssx --split --output shapes/ --to svg --verbose
+```
 
 ## Notes
 
-- The converted file can be imported into draw.io/diagrams.net via
-  **File > Open Library**, as can each individual file produced by `--split`.
-- The confirmation checkbox reflects a real statement made to the vss.draw.io
-  service; only run this against files you're comfortable uploading there.
-- Large stencil files (tens of MB) can take a minute or more to convert;
-  increase `--timeout` if needed.
+- Import the converted library, or any file from `--split`, into
+  draw.io/diagrams.net with **File > Open Library**.
+- The confirmation checkbox is a real statement to the vss.draw.io service. Only
+  upload files you're comfortable sending there.
+- Stencils of tens of megabytes can take a minute or more to convert. Raise
+  `--timeout` if needed.
+
+## Help support development
+
+Fund me here: https://ko-fi.com/richardatlateralblast
 
 ## License
 
